@@ -10,6 +10,13 @@
 | `ServiceAlertBanner` | `src/components/ServiceAlertBanner.tsx` | `vehicle, logs, serviceStatus, onNavigateToStats` | Peringatan servis di Beranda |
 | `StationMap` | `src/components/StationMap.tsx` | Lihat `StationMapProps` di file | Peta SPBU (Leaflet + Google Maps) |
 | `LoginGate` | `src/App.tsx` (lokal, tidak diekspor) | `onLogin` | Satu-satunya tampilan tamu |
+| `VehicleIcon` | `src/components/VehicleIcon.tsx` | `type: 'motor'\|'mobil', className?, filled?` | WAJIB untuk ikon kendaraan — jangan ternary manual |
+| `BrandAvatar` | `src/components/BrandAvatar.tsx` | `brand, size?: sm\|md\|lg` | WAJIB untuk avatar huruf brand SPBU (+ `brandDotClass(brand)` untuk dot) |
+| `StatusPill` / `StatusDot` / `QueuePill` | `src/components/StatusPill.tsx` | `status` (+ `label` / `uppercase`) | WAJIB untuk status stok & antrean — jangan replika warna manual |
+| `EmptyState` | `src/components/EmptyState.tsx` | `icon, title, hint?, actionLabel?, onAction?, className?` | WAJIB untuk semua keadaan kosong |
+| `Modal` | `src/components/Modal.tsx` | `icon, iconBg?, iconColor?, title, subtitle?, onClose, children, position?: center\|sheet` | WAJIB untuk semua dialog/modal |
+| `Toast` | `src/components/Toast.tsx` | `message, tone?: dark\|success, position?: top\|bottom` | WAJIB untuk notifikasi — jangan div toast manual |
+| `DistributionBar` | `src/components/DistributionBar.tsx` | `items: {label, sub, pct, color}[], emptyText, maxItems?` | WAJIB untuk bar komposisi + legenda |
 | `EmptyVehicleState` | `src/App.tsx` (lokal, tidak diekspor) | `onAdd` | Akun login tanpa kendaraan + butuh kendaraan |
 
 ## Aturan membuat komponen baru

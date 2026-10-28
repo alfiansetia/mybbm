@@ -1,10 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { Vehicle, FuelLog, GasStation } from '../types';
+import { Vehicle, FuelLog } from '../types';
+import { VehicleIcon } from '../components/VehicleIcon';
+import { BrandAvatar } from '../components/BrandAvatar';
+import { Modal } from '../components/Modal';
+import { formatKm, formatRupiah } from '../utils/format';
 
 interface CatatBbmViewProps {
   activeVehicle: Vehicle;
   allVehicles: Vehicle[];
-  stations: GasStation[];
   initialMode?: 'scan' | 'manual';
   onSaveLog: (newLog: FuelLog) => void;
   onCancel: () => void;
@@ -13,7 +16,6 @@ interface CatatBbmViewProps {
 export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   activeVehicle,
   allVehicles,
-  stations,
   initialMode = 'scan',
   onSaveLog,
   onCancel,
@@ -30,8 +32,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [stationBrand, setStationBrand] = useState<'Pertamina' | 'Shell' | 'Vivo' | 'BP' | 'Toko Madura' | 'Lainnya'>('Pertamina');
   const [dateTime, setDateTime] = useState('17 Okt 2026, 08:45 WIB');
   const [fuelType, setFuelType] = useState('Pertalite');
-  const [previousOdo, setPreviousOdo] = useState(activeVehicle.currentOdo > 195 ? activeVehicle.currentOdo - 195 : 14655);
-  const [currentOdo, setCurrentOdo] = useState(activeVehicle.currentOdo || 14850);
+  const [previousOdo, setPreviousOdo] = useState(activeVehicle.currentOdo > 195 ? activeVehicle.currentOdo - 195 : 0);
+  const [currentOdo, setCurrentOdo] = useState(activeVehicle.currentOdo || 0);
   const [isFullTank, setIsFullTank] = useState(true);
   const [liters, setLiters] = useState(3.80);
   const [pricePerLiter, setPricePerLiter] = useState(10000);
@@ -272,13 +274,13 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
                 <div className="flex justify-between items-center p-1 rounded bg-teal-50/70 border border-teal-100">
                   <span className="text-slate-500">HARGA/L :</span>
-                  <span className="font-bold tabular-nums">Rp {pricePerLiter.toLocaleString('id-ID')}</span>
+                  <span className="font-bold tabular-nums">{formatRupiah(pricePerLiter)}</span>
                 </div>
 
                 <div className="flex justify-between items-center p-1.5 rounded bg-sky-100 text-[#001d31] font-bold text-[11px] border border-sky-300">
                   <span>TOTAL :</span>
                   <span className="text-[#006194] font-extrabold tabular-nums">
-                    Rp {totalAmount.toLocaleString('id-ID')}
+                    {formatRupiah(totalAmount)}
                   </span>
                 </div>
               </div>
@@ -391,9 +393,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           <div className="flex items-center justify-between bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center text-[#006194] shrink-0 font-bold">
-                <span className="material-symbols-outlined text-[18px]">
-                  {currentVehicle.type === 'motor' ? 'two_wheeler' : 'directions_car'}
-                </span>
+                <VehicleIcon type={currentVehicle.type} className="text-[18px]" />
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-900 truncate">{currentVehicle.name}</p>
@@ -444,17 +444,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg">
-              <div
-                className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 font-bold text-xs ${
-                  stationBrand === 'Pertamina'
-                    ? 'bg-red-100 text-[#ee2737]'
-                    : stationBrand === 'Shell'
-                    ? 'bg-amber-100 text-[#894d00]'
-                    : 'bg-teal-100 text-[#006a63]'
-                }`}
-              >
-                {stationBrand === 'Pertamina' ? 'P' : stationBrand === 'Shell' ? 'S' : 'B'}
-              </div>
+              <BrandAvatar brand={stationBrand} size="sm" />
               <input
                 type="text"
                 value={stationName}
@@ -687,20 +677,17 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
       {/* Modal Peringatan Odometer Lebih Rendah */}
       {showOdoWarningModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 text-amber-600 mb-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[24px]">warning</span>
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 font-headline">Konfirmasi Angka Odometer</h3>
-                <p className="text-[11px] text-slate-500">Angka lebih rendah dari catatan sebelumnya</p>
-              </div>
-            </div>
-
+        <Modal
+          icon="warning"
+          iconBg="bg-amber-100"
+          iconColor="text-amber-600"
+          title="Konfirmasi Angka Odometer"
+          subtitle="Angka lebih rendah dari catatan sebelumnya"
+          onClose={() => setShowOdoWarningModal(false)}
+        >
             <p className="text-xs text-slate-600 mb-4 bg-amber-50 p-3 rounded-xl border border-amber-200">
-              Odometer sekarang (<strong>{currentOdo.toLocaleString('id-ID')} km</strong>) lebih kecil dari odometer sebelumnya (<strong>{previousOdo.toLocaleString('id-ID')} km</strong>). Tetap simpan log ini?
+              Odometer sekarang (<strong>{formatKm(currentOdo)}</strong>) lebih kecil dari odometer
+              sebelumnya (<strong>{formatKm(previousOdo)}</strong>). Tetap simpan log ini?
             </p>
 
             <div className="flex gap-2">
@@ -722,8 +709,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 Tetap Simpan
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

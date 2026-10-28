@@ -34,6 +34,7 @@ import {
 import { User as FirebaseUser } from 'firebase/auth';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav, NavTab } from './components/BottomNav';
+import { EmptyState } from './components/EmptyState';
 import { BerandaView } from './views/BerandaView';
 import { CekSpbuView } from './views/CekSpbuView';
 import { CatatBbmView } from './views/CatatBbmView';
@@ -594,7 +595,13 @@ export default function App() {
             onVoteReport={handleVoteReport}
           />
         ) : !activeVehicle && needsVehicle ? (
-          <EmptyVehicleState onAdd={() => handleNavigateTab('akun')} />
+          <EmptyState
+            icon="two_wheeler"
+            title="Belum ada kendaraan"
+            hint="Tambahkan kendaraan pertamamu untuk mulai mencatat pengisian BBM."
+            actionLabel="Tambah Kendaraan"
+            onAction={() => handleNavigateTab('akun')}
+          />
         ) : activeTab === 'beranda' ? (
           <BerandaView
             activeVehicle={activeVehicle!}
@@ -628,7 +635,6 @@ export default function App() {
           <CatatBbmView
             activeVehicle={activeVehicle!}
             allVehicles={vehicles}
-            stations={stations}
             initialMode={catatInitialMode}
             onSaveLog={handleSaveLog}
             onCancel={() => handleNavigateTab('beranda')}
@@ -690,31 +696,6 @@ function LoginGate({ onLogin }: { onLogin: () => void }) {
         <span className="material-symbols-outlined text-[13px]">lock</span>
         <span>Datamu hanya tersimpan di akunmu sendiri</span>
       </p>
-    </div>
-  );
-}
-
-// Keadaan kosong: akun login tapi belum punya kendaraan
-function EmptyVehicleState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center text-center gap-3 py-16 animate-in fade-in duration-150">
-      <div className="w-14 h-14 rounded-full bg-sky-100 flex items-center justify-center text-[#006194]">
-        <span className="material-symbols-outlined text-[28px]">two_wheeler</span>
-      </div>
-      <div>
-        <h2 className="text-base font-extrabold text-slate-900 font-headline">Belum ada kendaraan</h2>
-        <p className="text-xs text-slate-500 mt-1 max-w-[260px]">
-          Tambahkan kendaraan pertamamu untuk mulai mencatat pengisian BBM.
-        </p>
-      </div>
-      <button
-        onClick={onAdd}
-        type="button"
-        className="h-10 px-5 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-[0.99] transition-all"
-      >
-        <span className="material-symbols-outlined text-[18px]">add</span>
-        <span>Tambah Kendaraan</span>
-      </button>
     </div>
   );
 }

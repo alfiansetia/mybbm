@@ -14,6 +14,9 @@
 | `getReputationTier(score)` / `REPUTATION_TIERS` | `src/utils/reputation.ts` | Tier badge (Master ≥4.8, Terpercaya ≥4.5, Aktif ≥3.5, Baru ≥1.0) |
 | `computeAggregatedStatus(reports, fuel?)` | `src/utils/reputation.ts` | Status dominan berbobot (recency × trust × vote); `Terbatas` saat ambigu |
 | `getStationPinStatus(station, filter?)` | `src/utils/reputation.ts` | Warna pin peta: green/amber/red/brown + label + hex |
+| `readServiceBaseline/writeServiceBaseline` | `src/utils/serviceTracker.ts` | Satu-satunya akses key `mybbm_last_service_*` |
+| `formatRupiah/formatKm/formatLiters/formatCount` | `src/utils/format.ts` | WAJIB untuk semua angka tampil — jangan `toLocaleString` manual di view |
+| `SHORT_MONTHS_ID/FULL_MONTHS_ID/lastNMonths/formatBulanTahun` | `src/utils/format.ts` | WAJIB untuk nama bulan & agregasi tren — jangan array bulan lokal |
 | `ServiceTracker.evaluateServiceStatus(vehicle, logs, baseline?)` | `src/utils/serviceTracker.ts` | Sisa km servis, progres, estimasi hari, checklist per tipe |
 | `ServiceTracker.getServiceInterval(type)` | `src/utils/serviceTracker.ts` | Motor 3000 km, mobil 5000 km — jangan hardcode angka di view |
 

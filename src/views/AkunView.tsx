@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { Vehicle, UserProfile } from '../types';
 import { getReputationTier, REPUTATION_TIERS } from '../utils/reputation';
 import { ReputationBadge } from '../components/ReputationBadge';
+import { VehicleIcon } from '../components/VehicleIcon';
+import { Modal } from '../components/Modal';
+import { Toast } from '../components/Toast';
+import { formatKm } from '../utils/format';
 
 interface AkunViewProps {
   userProfile: UserProfile;
@@ -206,9 +210,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
                       isActive ? 'bg-[#006194] text-white' : 'bg-slate-200 text-slate-700'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {v.type === 'motor' ? 'two_wheeler' : 'directions_car'}
-                    </span>
+                    <VehicleIcon type={v.type} className="text-[18px]" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -220,7 +222,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      {v.plateNumber} • Odo: {v.currentOdo.toLocaleString('id-ID')} km • {v.averageKmL} km/L
+                      {v.plateNumber} • Odo: {formatKm(v.currentOdo)} • {v.averageKmL} km/L
                     </p>
                   </div>
                 </div>
@@ -360,20 +362,13 @@ export const AkunView: React.FC<AkunViewProps> = ({
 
       {/* Modal Tambah Kendaraan */}
       {isAddVehicleOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl p-4 shadow-xl border border-slate-200 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900 font-headline">Tambah Kendaraan Baru</h3>
-              <button
-                onClick={() => setIsAddVehicleOpen(false)}
-                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmitNewVehicle} className="space-y-3">
+        <Modal
+          icon="two_wheeler"
+          title="Tambah Kendaraan Baru"
+          subtitle="Lengkapi data kendaraanmu"
+          onClose={() => setIsAddVehicleOpen(false)}
+        >
+          <form onSubmit={handleSubmitNewVehicle} className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">Jenis Kendaraan</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -474,33 +469,30 @@ export const AkunView: React.FC<AkunViewProps> = ({
                   Simpan Kendaraan
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
-      {/* Modal Konfirmasi Reset Dummy Data */}
+      {/* Modal Konfirmasi Reset Data Pribadi */}
       {isResetModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 text-red-600 mb-3">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[24px]">restart_alt</span>
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 font-headline">Reset Dummy Data?</h3>
-                <p className="text-[11px] text-slate-500">Tindakan ini akan memulihkan data awal</p>
-              </div>
-            </div>
-
+        <Modal
+          icon="restart_alt"
+          iconBg="bg-red-100"
+          iconColor="text-red-600"
+          title="Reset Data Saya?"
+          subtitle="Tindakan ini menghapus permanen data akunmu"
+          onClose={() => setIsResetModalOpen(false)}
+        >
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1.5 mb-4">
-              <p className="font-semibold text-slate-800">Data yang akan dipulihkan ke versi demo:</p>
+              <p className="font-semibold text-slate-800">Data yang akan dihapus dari akun ini:</p>
               <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-600">
-                <li>Garasi: Honda Vario 160 & Toyota Avanza</li>
-                <li>Riwayat Log BBM: 4 entri historis pengisian BBM</li>
-                <li>Daftar SPBU & laporan stok crowdsourced real-time</li>
-                <li>Pelacak servis berkala dan interval odometer</li>
+                <li>Semua kendaraan di garasi</li>
+                <li>Seluruh riwayat log pengisian BBM</li>
+                <li>Statistik reputasi & laporan (kembali ke awal)</li>
               </ul>
+              <p className="text-[11px] text-slate-500">
+                Data SPBU publik & laporan komunitas tidak ikut terhapus.
+              </p>
             </div>
 
             <div className="flex gap-2">
@@ -516,7 +508,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
                 onClick={() => {
                   onResetData();
                   setIsResetModalOpen(false);
-                  setToastMessage('Data dummy berhasil direset ke kondisi awal!');
+                  setToastMessage('Data akun berhasil direset.');
                   setTimeout(() => setToastMessage(null), 3000);
                 }}
                 className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs transition-colors"
@@ -524,17 +516,11 @@ export const AkunView: React.FC<AkunViewProps> = ({
                 Ya, Reset Sekarang
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Floating Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <span className="material-symbols-outlined text-emerald-400 text-[18px]">check_circle</span>
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      {toastMessage && <Toast message={toastMessage} />}
     </div>
   );
 };

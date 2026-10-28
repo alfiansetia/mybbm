@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { GasStation, CommunityReport, UserProfile } from '../types';
-import { getReputationTier } from '../utils/reputation';
 import { ReputationBadge } from '../components/ReputationBadge';
+import { StatusPill } from '../components/StatusPill';
+import { formatRupiah } from '../utils/format';
 
 interface DetailSpbuViewProps {
   station: GasStation;
@@ -263,20 +264,10 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
                         isKosong ? 'text-slate-400 line-through' : 'text-slate-900'
                       }`}
                     >
-                      Rp {fuel.price.toLocaleString('id-ID')}
+                      {formatRupiah(fuel.price)}
                       <span className="text-[10px] text-slate-400 font-normal">/L</span>
                     </div>
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        isKosong
-                          ? 'bg-red-50 text-[#dc2626]'
-                          : isTerbatas
-                          ? 'bg-amber-50 text-[#d97706]'
-                          : 'bg-emerald-50 text-[#059669]'
-                      }`}
-                    >
-                      {fuel.status.toUpperCase()}
-                    </span>
+                    <StatusPill status={fuel.status} uppercase />
                   </div>
                 </div>
 

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Vehicle, FuelLog } from '../types';
-import { ServiceTracker, ServiceCalculationResult } from '../utils/serviceTracker';
+import { ServiceTracker, ServiceCalculationResult, readServiceBaseline, writeServiceBaseline } from '../utils/serviceTracker';
+import { Modal } from './Modal';
+import { Toast } from './Toast';
+import { formatKm } from '../utils/format';
 
 interface ServiceAlertBannerProps {
   vehicle: Vehicle;
@@ -20,27 +23,14 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Key for local storage persistence of last service odometer
-  const storageKey = `mybbm_last_service_${vehicle.id}`;
-
-  const [lastServiceOdo, setLastServiceOdo] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? parseInt(saved, 10) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [lastServiceOdo, setLastServiceOdo] = useState<number | null>(() =>
+    readServiceBaseline(vehicle.id)
+  );
 
   // Keep in sync when vehicle changes
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`mybbm_last_service_${vehicle.id}`);
-      setLastServiceOdo(saved ? parseInt(saved, 10) : null);
-      setIsDismissed(false);
-    } catch {
-      setLastServiceOdo(null);
-    }
+    setLastServiceOdo(readServiceBaseline(vehicle.id));
+    setIsDismissed(false);
   }, [vehicle.id]);
 
   // Periodic service calculations via ServiceTracker utility
@@ -64,15 +54,11 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
   } = status;
 
   const handleMarkAsServiced = () => {
-    try {
-      localStorage.setItem(storageKey, currentOdometer.toString());
-      setLastServiceOdo(currentOdometer);
-      setShowConfirmModal(false);
-      setToastMessage('Jadwal servis berhasil diperbarui! Interval berikutnya telah direset.');
-      setTimeout(() => setToastMessage(null), 4000);
-    } catch (err) {
-      console.error('Failed to save service baseline:', err);
-    }
+    writeServiceBaseline(vehicle.id, currentOdometer);
+    setLastServiceOdo(currentOdometer);
+    setShowConfirmModal(false);
+    setToastMessage('Jadwal servis berhasil diperbarui! Interval berikutnya telah direset.');
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   // If dismissed by user, provide a compact restorable pill
@@ -84,7 +70,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
           <span>
             Pengingat Servis:{' '}
             <strong className="font-bold">
-              {isOverdue ? 'Jadwal Terlewati' : `Sisa ${kmRemaining.toLocaleString('id-ID')} km`}
+              {isOverdue ? 'Jadwal Terlewati' : `Sisa ${formatKm(kmRemaining)}`}
             </strong>
           </span>
         </div>
@@ -102,12 +88,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
   return (
     <>
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-          <span className="material-symbols-outlined text-[18px]">check_circle</span>
-          <span>{toastMessage}</span>
-        </div>
-      )}
+      {toastMessage && <Toast message={toastMessage} tone="success" position="top" />}
 
       {/* Main Service Alert Banner Card */}
       <section
@@ -164,22 +145,22 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
                   >
                     {isOverdue
                       ? `Lewat ${Math.abs(kmRemaining)} km`
-                      : `Sisa ${kmRemaining.toLocaleString('id-ID')} km`}
+                      : `Sisa ${formatKm(kmRemaining)}`}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
                   {isOverdue ? (
                     <>
                       Odometer telah melampaui target servis{' '}
-                      <strong className="text-red-700">{nextServiceOdo.toLocaleString('id-ID')} km</strong>.
+                      <strong className="text-red-700">{formatKm(nextServiceOdo)}</strong>.
                       Segera jadwalkan ganti oli demi menjaga efisiensi mesin.
                     </>
                   ) : (
                     <>
                       Berdasarkan data log BBM, sisa jarak tempuh tinggal{' '}
-                      <strong className="text-slate-900 font-bold">{kmRemaining.toLocaleString('id-ID')} km</strong> lagi
+                      <strong className="text-slate-900 font-bold">{formatKm(kmRemaining)}</strong> lagi
                       menuju target{' '}
-                      <strong className="text-slate-900">{nextServiceOdo.toLocaleString('id-ID')} km</strong>.
+                      <strong className="text-slate-900">{formatKm(nextServiceOdo)}</strong>.
                     </>
                   )}
                 </p>
@@ -202,10 +183,10 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-600 font-medium flex items-center gap-1">
                 <span className="material-symbols-outlined text-[15px] text-slate-400">speed</span>
-                Odometer: <strong className="text-slate-900">{currentOdometer.toLocaleString('id-ID')} km</strong>
+                Odometer: <strong className="text-slate-900">{formatKm(currentOdometer)}</strong>
               </span>
               <span className="text-slate-600 font-medium">
-                Target: <strong className="text-slate-900">{nextServiceOdo.toLocaleString('id-ID')} km</strong>
+                Target: <strong className="text-slate-900">{formatKm(nextServiceOdo)}</strong>
               </span>
             </div>
 
@@ -236,7 +217,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
                 </span>
               </span>
               <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-semibold">
-                Siklus {serviceInterval.toLocaleString('id-ID')} km
+                Siklus {formatKm(serviceInterval)}
               </span>
             </div>
           </div>
@@ -289,34 +270,20 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
 
       {/* Modal 1: Service Checklist Drawer */}
       {showChecklistModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center text-[#006a63]">
-                  <span className="material-symbols-outlined text-[18px]">checklist_rtl</span>
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900 font-headline">
-                    Checklist Servis {vehicle.name}
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    Target {nextServiceOdo.toLocaleString('id-ID')} km ({vehicle.type === 'motor' ? 'Motor' : 'Mobil'})
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowChecklistModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
+        <Modal
+          icon="checklist_rtl"
+          iconBg="bg-teal-100"
+          iconColor="text-[#006a63]"
+          title={`Checklist Servis ${vehicle.name}`}
+          subtitle={`Target ${formatKm(nextServiceOdo)} (${vehicle.type === 'motor' ? 'Motor' : 'Mobil'})`}
+          onClose={() => setShowChecklistModal(false)}
+          position="sheet"
+        >
+          <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
 
             <p className="text-xs text-slate-600 leading-relaxed">
               Berikut poin perawatan berkala yang dianjurkan oleh pabrikan pada interval{' '}
-              <strong>{serviceInterval.toLocaleString('id-ID')} km</strong> untuk menjaga efisiensi konsumsi BBM:
+              <strong>{formatKm(serviceInterval)}</strong> untuk menjaga efisiensi konsumsi BBM:
             </p>
 
             <div className="flex flex-col gap-2">
@@ -359,40 +326,35 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Modal 2: Confirm Mark as Serviced */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 text-[#059669] flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">verified</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <h4 className="text-sm font-bold text-slate-900 font-headline">
-                  Tandai Sudah Selesai Servis?
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  {vehicle.name} ({vehicle.plateNumber})
-                </p>
-              </div>
-            </div>
+        <Modal
+          icon="verified"
+          iconBg="bg-emerald-100"
+          iconColor="text-[#059669]"
+          title="Tandai Sudah Selesai Servis?"
+          subtitle={`${vehicle.name} (${vehicle.plateNumber})`}
+          onClose={() => setShowConfirmModal(false)}
+          position="sheet"
+        >
+          <div className="flex flex-col gap-4">
 
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs text-slate-700 flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Odometer Terkini:</span>
-                <span className="font-bold text-slate-900">{currentOdometer.toLocaleString('id-ID')} km</span>
+                <span className="font-bold text-slate-900">{formatKm(currentOdometer)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Jadwal Servis Berikutnya:</span>
                 <span className="font-bold text-[#006194]">
-                  {(currentOdometer + serviceInterval).toLocaleString('id-ID')} km
+                  {formatKm(currentOdometer + serviceInterval)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/80">
-                Odometer saat ini ({currentOdometer.toLocaleString('id-ID')} km) akan dicatat sebagai patokan
+                Odometer saat ini ({formatKm(currentOdometer)}) akan dicatat sebagai patokan
                 servis terakhir, dan peringatan akan muncul kembali saat mendekati siklus servis berikutnya.
               </p>
             </div>
@@ -415,7 +377,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

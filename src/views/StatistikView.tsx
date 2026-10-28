@@ -1,6 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { Vehicle, FuelLog } from '../types';
-import { ServiceTracker } from '../utils/serviceTracker';
+import { ServiceTracker, readServiceBaseline } from '../utils/serviceTracker';
+import { VehicleIcon } from '../components/VehicleIcon';
+import { DistributionBar } from '../components/DistributionBar';
+import { EmptyState } from '../components/EmptyState';
+import {
+  formatRupiah,
+  formatKm,
+  formatCount,
+  SHORT_MONTHS_ID,
+  FULL_MONTHS_ID,
+  formatBulanSingkatTahun,
+} from '../utils/format';
 import {
   ResponsiveContainer,
   LineChart,
@@ -38,7 +49,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
   onExportCSV,
 }) => {
   const currentYear = new Date().getFullYear();
-  const currentMonthLabel = new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+  const currentMonthLabel = formatBulanSingkatTahun();
   const [selectedPeriod, setSelectedPeriod] = useState<string>('Bulan Ini');
   const [activeMetric, setActiveMetric] = useState<ChartMetric>('kmL');
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
@@ -61,20 +72,15 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
 
   // Status servis dari data nyata (dipakai kartu oli, bukan hardcode 150 KM)
   const serviceStatus = useMemo(() => {
-    let savedBaseline: number | null = null;
-    try {
-      const saved = localStorage.getItem(`mybbm_last_service_${activeVehicle.id}`);
-      if (saved) savedBaseline = parseInt(saved, 10);
-    } catch {
-      // ignore
-    }
-    return ServiceTracker.evaluateServiceStatus(activeVehicle, logs, savedBaseline);
+    return ServiceTracker.evaluateServiceStatus(
+      activeVehicle,
+      logs,
+      readServiceBaseline(activeVehicle.id)
+    );
   }, [activeVehicle, logs]);
 
   // Tren 6 bulan terakhir — agregasi nyata dari log user (bukan data contoh statis)
   const monthlyData: MonthlyDataPoint[] = useMemo(() => {
-    const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-    const fullMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const now = new Date();
     const out: MonthlyDataPoint[] = [];
 
@@ -89,8 +95,8 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
       const distance = inMonth.reduce((a, c) => a + (c.distanceKm || 0), 0);
       const kms = inMonth.filter((l) => l.calculatedKmL).map((l) => l.calculatedKmL!);
       out.push({
-        month: shortMonths[d.getMonth()],
-        fullMonth: `${fullMonths[d.getMonth()]} ${d.getFullYear()}`,
+        month: SHORT_MONTHS_ID[d.getMonth()],
+        fullMonth: `${FULL_MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`,
         kmL: kms.length > 0 ? Number((kms.reduce((a, b) => a + b, 0) / kms.length).toFixed(1)) : 0,
         liters: Number(liters.toFixed(1)),
         cost,
@@ -195,11 +201,11 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
           </div>
           <div className="flex items-center justify-between text-slate-300 text-[11px]">
             <span>Pengeluaran:</span>
-            <span className="font-bold text-amber-300">Rp {data.cost.toLocaleString('id-ID')}</span>
+            <span className="font-bold text-amber-300">{formatRupiah(data.cost)}</span>
           </div>
           <div className="flex items-center justify-between text-slate-400 text-[10px] pt-0.5 border-t border-slate-800">
             <span>Jarak Tempuh:</span>
-            <span>{data.distance.toLocaleString('id-ID')} km</span>
+            <span>{formatKm(data.distance)}</span>
           </div>
         </div>
       );
@@ -214,9 +220,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-[#006a63] shrink-0">
-              <span className="material-symbols-outlined text-[19px]">
-                {activeVehicle.type === 'motor' ? 'two_wheeler' : 'directions_car'}
-              </span>
+              <VehicleIcon type={activeVehicle.type} className="text-[19px]" />
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
@@ -291,7 +295,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
           </div>
           <div>
             <div className="text-lg font-extrabold text-slate-900 leading-tight tabular-nums font-headline">
-              Rp {totalBiaya.toLocaleString('id-ID')}
+              {formatRupiah(totalBiaya)}
             </div>
             <div className="mt-1 inline-flex items-center gap-1 text-slate-500 text-[10px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-[#006194]" />
@@ -332,7 +336,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
           <div>
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-extrabold text-slate-900 tabular-nums font-headline">
-                {totalDistance.toLocaleString('id-ID')}
+                {formatCount(totalDistance)}
               </span>
               <span className="text-xs text-slate-500 font-semibold">KM</span>
             </div>
@@ -340,7 +344,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               {vehicleLogs.length}x Pengisian
             </div>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1">Odo: {activeVehicle.currentOdo.toLocaleString('id-ID')} km</span>
+          <span className="text-[10px] text-slate-400 mt-1">Odo: {formatKm(activeVehicle.currentOdo)}</span>
         </div>
       </div>
 
@@ -397,13 +401,12 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
 
         {/* Recharts Line Chart Container */}
         {!hasData ? (
-          <div className="w-full py-8 px-4 flex flex-col items-center justify-center text-center gap-2 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-            <span className="material-symbols-outlined text-slate-300 text-[32px]">show_chart</span>
-            <p className="text-xs font-bold text-slate-700">Belum ada data untuk grafik</p>
-            <p className="text-[11px] text-slate-500">
-              Catat pengisian BBM pertamamu, grafik tren akan muncul di sini.
-            </p>
-          </div>
+          <EmptyState
+            icon="show_chart"
+            title="Belum ada data untuk grafik"
+            hint="Catat pengisian BBM pertamamu, grafik tren akan muncul di sini."
+            className="py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300"
+          />
         ) : (
         <div className="w-full h-56 pt-2">
           <ResponsiveContainer width="100%" height="100%">
@@ -482,7 +485,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
                 if (selectedMonth) {
                   const m = monthlyData.find((x) => x.month === selectedMonth);
                   if (m && m.logsCount > 0) {
-                    return `Bulan ${m.fullMonth}: ${m.logsCount}x pengisian, efisiensi ${m.kmL} km/L, biaya Rp ${m.cost.toLocaleString('id-ID')}.`;
+                    return `Bulan ${m.fullMonth}: ${m.logsCount}x pengisian, efisiensi ${m.kmL} km/L, biaya ${formatRupiah(m.cost)}.`;
                   }
                   return `Bulan ${selectedMonth}: belum ada catatan pengisian.`;
                 }
@@ -523,7 +526,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-900 font-headline">Komposisi Pengeluaran</h3>
-          <span className="text-xs text-slate-500 font-bold">Rp {totalBiaya.toLocaleString('id-ID')}</span>
+          <span className="text-xs text-slate-500 font-bold">{formatRupiah(totalBiaya)}</span>
         </div>
 
         {/* Brand Distribution */}
@@ -538,41 +541,15 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
             </span>
           </div>
 
-          {brandStats.length === 0 ? (
-            <p className="text-[11px] text-slate-400 py-2 text-center">
-              Catat pengisian untuk melihat komposisi brand.
-            </p>
-          ) : (
-            <>
-              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 gap-0.5">
-                {brandStats.slice(0, 2).map((b, i) => (
-                  <div
-                    key={b.name}
-                    className={`h-full ${i === 0 ? 'rounded-l-full' : ''} ${i === brandStats.slice(0, 2).length - 1 ? 'rounded-r-full' : ''}`}
-                    style={{
-                      width: `${b.pct}%`,
-                      backgroundColor: i === 0 ? '#ee2737' : '#ffd200',
-                    }}
-                  />
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between pt-0.5 text-xs flex-wrap gap-1">
-                {brandStats.slice(0, 2).map((b, i) => (
-                  <div key={b.name} className="flex items-center gap-1.5">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: i === 0 ? '#ee2737' : '#ffd200' }}
-                    />
-                    <span className="text-slate-800 font-medium">{b.name}</span>
-                    <span className="text-slate-400 text-[10px] font-bold">
-                      ({b.pct}% · Rp{b.amount.toLocaleString('id-ID')})
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          <DistributionBar
+            items={brandStats.map((b, i) => ({
+              label: b.name,
+              sub: formatRupiah(b.amount),
+              pct: b.pct,
+              color: i === 0 ? '#ee2737' : '#ffd200',
+            }))}
+            emptyText="Catat pengisian untuk melihat komposisi brand."
+          />
         </div>
 
         <div className="w-full h-px bg-slate-100" />
@@ -587,45 +564,15 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
             <span className="text-slate-400 text-[10px]">{totalLiters.toFixed(1)} Liter</span>
           </div>
 
-          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 gap-0.5">
-            {fuelStats.length === 0 ? (
-              <div className="h-full w-full flex items-center justify-center">
-                <span className="text-[9px] text-slate-400">Belum ada data</span>
-              </div>
-            ) : (
-              fuelStats.slice(0, 2).map((f, i) => (
-                <div
-                  key={f.name}
-                  className={`h-full ${i === 0 ? 'rounded-l-full' : ''} ${i === fuelStats.slice(0, 2).length - 1 ? 'rounded-r-full' : ''}`}
-                  style={{
-                    width: `${f.pct}%`,
-                    backgroundColor: i === 0 ? '#059669' : '#005baa',
-                  }}
-                />
-              ))
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-0.5 text-xs flex-wrap gap-1">
-            {fuelStats.length === 0 ? (
-              <span className="text-slate-400 text-[11px]">
-                Catat pengisian untuk melihat komposisi BBM.
-              </span>
-            ) : (
-              fuelStats.slice(0, 2).map((f, i) => (
-                <div key={f.name} className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: i === 0 ? '#059669' : '#005baa' }}
-                  />
-                  <span className="text-slate-800 font-medium">{f.name}</span>
-                  <span className="text-slate-400 text-[10px] font-bold">
-                    ({f.pct}% · {f.liters.toFixed(1)} L)
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+          <DistributionBar
+            items={fuelStats.map((f, i) => ({
+              label: f.name,
+              sub: `${f.liters.toFixed(1)} L`,
+              pct: f.pct,
+              color: i === 0 ? '#059669' : '#005baa',
+            }))}
+            emptyText="Catat pengisian untuk melihat komposisi BBM."
+          />
         </div>
       </div>
 
@@ -668,17 +615,17 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               <span className="px-2 py-0.5 rounded-full bg-amber-100 text-[#894d00] text-[10px] font-extrabold">
                 {serviceStatus.remainingKm <= 0
                   ? 'Terlewati'
-                  : `Sisa ${serviceStatus.remainingKm.toLocaleString('id-ID')} KM`}
+                  : `Sisa ${formatKm(serviceStatus.remainingKm).toUpperCase()}`}
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-0.5 leading-snug">
               Odometer saat ini:{' '}
               <strong className="text-slate-900">
-                {serviceStatus.currentMileage.toLocaleString('id-ID')} km
+                {formatKm(serviceStatus.currentMileage)}
               </strong>
               . Target servis berkala di{' '}
               <strong className="text-slate-900">
-                {serviceStatus.nextServiceMileage.toLocaleString('id-ID')} km
+                {formatKm(serviceStatus.nextServiceMileage)}
               </strong>
               .
             </p>

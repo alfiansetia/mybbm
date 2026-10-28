@@ -1,7 +1,11 @@
 import React, { useMemo } from 'react';
 import { Vehicle, FuelLog, GasStation } from '../types';
 import { ServiceAlertBanner } from '../components/ServiceAlertBanner';
-import { ServiceTracker } from '../utils/serviceTracker';
+import { ServiceTracker, readServiceBaseline } from '../utils/serviceTracker';
+import { VehicleIcon } from '../components/VehicleIcon';
+import { BrandAvatar, brandDotClass } from '../components/BrandAvatar';
+import { QueuePill, StatusDot } from '../components/StatusPill';
+import { formatRupiah, formatKm, formatRentangBulanBerjalan } from '../utils/format';
 
 interface BerandaViewProps {
   activeVehicle: Vehicle;
@@ -30,14 +34,11 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
 
   // Calculate remaining distance until next service using ServiceTracker utility
   const serviceStatus = useMemo(() => {
-    let savedBaseline: number | null = null;
-    try {
-      const saved = localStorage.getItem(`mybbm_last_service_${activeVehicle.id}`);
-      if (saved) savedBaseline = parseInt(saved, 10);
-    } catch {
-      // ignore
-    }
-    return ServiceTracker.evaluateServiceStatus(activeVehicle, logs, savedBaseline);
+    return ServiceTracker.evaluateServiceStatus(
+      activeVehicle,
+      logs,
+      readServiceBaseline(activeVehicle.id)
+    );
   }, [activeVehicle, logs]);
 
   // Calculate monthly stats (for current month October 2026 or latest 30 days)
@@ -47,12 +48,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   const averageCostPerKm = totalDistance > 0 ? Math.round(totalSpent / totalDistance) : 0;
 
   // Rentang tanggal bulan berjalan (dinamis, bukan hardcode)
-  const now = new Date();
-  const monthName = now.toLocaleDateString('id-ID', { month: 'short' });
-  const monthRangeLabel = `1–${now.getDate()} ${monthName} ${now.getFullYear()}`;
-
-  // Format currency
-  const formatRupiah = (val: number) => `Rp ${val.toLocaleString('id-ID')}`;
+  const monthRangeLabel = formatRentangBulanBerjalan();
 
   return (
     <div className="flex flex-col w-full gap-5">
@@ -63,9 +59,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center shrink-0 backdrop-blur-md">
-                <span className="material-symbols-outlined text-white text-[22px]">
-                  {activeVehicle.type === 'motor' ? 'two_wheeler' : 'directions_car'}
-                </span>
+                <VehicleIcon type={activeVehicle.type} className="text-white text-[22px]" />
               </div>
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1">
@@ -104,12 +98,12 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                         ? 'bg-amber-400 text-amber-950 animate-pulse'
                         : 'bg-amber-300 text-amber-950'
                     }`}
-                    title={`Peringatan Servis: Tersisa ${serviceStatus.remainingKm.toLocaleString('id-ID')} km lagi`}
+                    title={`Peringatan Servis: Tersisa ${formatKm(serviceStatus.remainingKm)} lagi`}
                   >
                     <span className="material-symbols-outlined text-[11px]">warning</span>
                     {serviceStatus.remainingKm <= 0
                       ? 'Lewat'
-                      : `< ${serviceStatus.remainingKm.toLocaleString('id-ID')} km`}
+                      : `< ${formatKm(serviceStatus.remainingKm)}`}
                   </span>
                 )}
               </div>
@@ -122,7 +116,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
               {serviceStatus.isWarning && (
                 <div className="text-[10px] text-amber-200 font-semibold flex items-center gap-1 pt-0.5 border-t border-white/10 mt-1">
                   <span className="material-symbols-outlined text-[12px]">build</span>
-                  <span>Target {serviceStatus.nextServiceMileage.toLocaleString('id-ID')} km</span>
+                  <span>Target {formatKm(serviceStatus.nextServiceMileage)}</span>
                 </div>
               )}
             </div>
@@ -255,7 +249,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
               Biaya/km
             </span>
             <span className="text-[14px] font-bold text-slate-900 mt-1 truncate tabular-nums">
-              Rp {averageCostPerKm.toLocaleString('id-ID')}
+              {formatRupiah(averageCostPerKm)}
             </span>
             <span className="text-[10px] text-[#059669] font-semibold mt-0.5">
               {totalDistance > 0 ? 'Sangat Hemat' : 'Isi data dulu'}
@@ -293,17 +287,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-start gap-2.5 min-w-0">
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 font-bold text-[14px] ${
-                    station.brand === 'Pertamina'
-                      ? 'bg-red-50 text-[#ee2737]'
-                      : station.brand === 'Shell'
-                      ? 'bg-amber-100 text-[#894d00]'
-                      : 'bg-teal-50 text-[#006a63]'
-                  }`}
-                >
-                  {station.brand === 'Pertamina' ? 'P' : station.brand === 'Shell' ? 'S' : 'B'}
-                </div>
+                <BrandAvatar brand={station.brand} />
                 <div className="flex flex-col min-w-0">
                   <span className="text-[14px] font-bold text-slate-900 truncate font-headline">
                     {station.name}
@@ -316,17 +300,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                 </div>
               </div>
 
-              <span
-                className={`px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
-                  station.queueStatus === 'Sepi'
-                    ? 'bg-emerald-50 text-[#059669]'
-                    : station.queueStatus === 'Sedang'
-                    ? 'bg-amber-50 text-[#d97706]'
-                    : 'bg-red-50 text-[#dc2626]'
-                }`}
-              >
-                {station.queueEstimateText}
-              </span>
+              <QueuePill status={station.queueStatus} label={station.queueEstimateText} />
             </div>
 
             {/* Live Stock Grid */}
@@ -337,26 +311,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                   className="rounded-lg bg-slate-50 p-1.5 flex flex-col items-center justify-center text-center border border-slate-100"
                 >
                   <span className="text-[10px] text-slate-500 font-medium truncate w-full">{f.type}</span>
-                  <span
-                    className={`text-[11px] font-bold flex items-center gap-1 mt-0.5 ${
-                      f.status === 'Tersedia'
-                        ? 'text-[#059669]'
-                        : f.status === 'Terbatas'
-                        ? 'text-[#d97706]'
-                        : 'text-[#dc2626]'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        f.status === 'Tersedia'
-                          ? 'bg-[#059669]'
-                          : f.status === 'Terbatas'
-                          ? 'bg-[#d97706]'
-                          : 'bg-[#dc2626]'
-                      }`}
-                    />
-                    {f.status === 'Tersedia' ? 'Ready' : f.status}
-                  </span>
+                  <StatusDot status={f.status} />
                 </div>
               ))}
             </div>
@@ -421,13 +376,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-1.5">
                 <span
-                  className={`w-2.5 h-2.5 rounded-full ${
-                    log.stationBrand === 'Pertamina'
-                      ? 'bg-[#ee2737]'
-                      : log.stationBrand === 'Shell'
-                      ? 'bg-[#ffd200]'
-                      : 'bg-[#005baa]'
-                  }`}
+                  className={`w-2.5 h-2.5 rounded-full ${brandDotClass(log.stationBrand)}`}
                 />
                 <span className="text-[14px] text-slate-900 font-bold truncate">{log.stationName}</span>
               </div>
@@ -459,13 +408,13 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                   <span className="flex items-center gap-0.5">
                     <span className="material-symbols-outlined text-[13px]">speed</span>
                     <span>
-                      {log.odometer.toLocaleString('id-ID')} km (+{log.distanceKm} km)
+                      {formatKm(log.odometer)} (+{log.distanceKm} km)
                     </span>
                   </span>
                 )}
               </div>
               {log.costPerKm && (
-                <span className="text-[#006a63] font-semibold">Rp {log.costPerKm}/km</span>
+                <span className="text-[#006a63] font-semibold">{formatRupiah(log.costPerKm)}/km</span>
               )}
             </div>
           </div>

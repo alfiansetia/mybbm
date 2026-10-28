@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { GasStation } from '../types';
 import { StationMap } from '../components/StationMap';
+import { BrandAvatar } from '../components/BrandAvatar';
 import { getStationPinStatus } from '../utils/reputation';
+import { formatRupiah } from '../utils/format';
 
 interface CekSpbuViewProps {
   stations: GasStation[];
@@ -230,21 +232,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                 {/* Station Top Info */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex gap-2.5 min-w-0">
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                        station.brand === 'Pertamina'
-                          ? 'bg-red-50 text-[#ee2737]'
-                          : station.brand === 'Shell'
-                          ? 'bg-amber-50 text-[#894d00]'
-                          : station.brand === 'Toko Madura'
-                          ? 'bg-amber-100 text-[#894d00]'
-                          : 'bg-emerald-50 text-[#009900]'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[24px]">
-                        {isMadura ? 'storefront' : 'local_gas_station'}
-                      </span>
-                    </div>
+                    <BrandAvatar brand={station.brand} size="lg" />
                     <div className="flex flex-col min-w-0">
                       <div className="flex items-center gap-1">
                         <h3 className="text-sm font-bold text-slate-900 truncate font-headline">
@@ -309,7 +297,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-800">{targetFuel.type}</span>
                       <span className="text-[11px] text-slate-500">
-                        Rp {targetFuel.price.toLocaleString('id-ID')}/L
+                        {formatRupiah(targetFuel.price)}/L
                       </span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-500 text-[10px]">
@@ -327,7 +315,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                       <span className="text-slate-700 font-medium">Pertamax (RON 92) Ready</span>
                     </div>
                     <span className="text-slate-500 font-medium">
-                      Rp {pertamaxFuel.price.toLocaleString('id-ID')}/L
+                      {formatRupiah(pertamaxFuel.price)}/L
                     </span>
                   </div>
                 )}

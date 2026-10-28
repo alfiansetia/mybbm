@@ -188,3 +188,23 @@ export const ServiceTracker = {
     };
   },
 };
+
+/** Baseline odometer servis terakhir per kendaraan (satu-satunya akses key ini). */
+const baselineKey = (vehicleId: string) => `mybbm_last_service_${vehicleId}`;
+
+export function readServiceBaseline(vehicleId: string): number | null {
+  try {
+    const saved = localStorage.getItem(baselineKey(vehicleId));
+    return saved ? parseInt(saved, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeServiceBaseline(vehicleId: string, odometer: number): void {
+  try {
+    localStorage.setItem(baselineKey(vehicleId), String(odometer));
+  } catch {
+    // abaikan: storage tidak tersedia
+  }
+}

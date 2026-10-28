@@ -1,5 +1,6 @@
 import React from 'react';
 import { Vehicle, UserProfile } from '../types';
+import { VehicleIcon } from './VehicleIcon';
 
 interface TopHeaderProps {
   currentSubtitle: string;
@@ -50,9 +51,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             type="button"
             className="h-9 px-3 py-1 rounded-full bg-slate-200/70 hover:bg-slate-200 flex items-center gap-1.5 text-slate-800 transition-colors active:scale-95 text-xs font-semibold"
           >
-            <span className="material-symbols-outlined text-[17px] text-[#006194]">
-              {activeVehicle?.type === 'mobil' ? 'directions_car' : 'two_wheeler'}
-            </span>
+            <VehicleIcon
+              type={activeVehicle?.type ?? 'motor'}
+              className="text-[17px] text-[#006194]"
+            />
             <span className="max-w-[95px] truncate">
               {activeVehicle?.name ?? 'Tambah kendaraan'}
             </span>
@@ -87,9 +89,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <span className="material-symbols-outlined text-[16px]">
-                        {v.type === 'motor' ? 'two_wheeler' : 'directions_car'}
-                      </span>
+                      <VehicleIcon type={v.type} className="text-[16px]" />
                       <span className="truncate">{v.name}</span>
                     </div>
                     {v.id === activeVehicle?.id && (
