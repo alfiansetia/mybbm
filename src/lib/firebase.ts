@@ -12,24 +12,17 @@ import {
   doc,
   getDocFromServer,
 } from 'firebase/firestore';
-import firebaseFileConfig from '../../firebase-applet-config.json';
-
-// Config: env (.env, tidak di-commit) diprioritaskan, fallback ke
-// firebase-applet-config.json (di-gitignore; di-inject otomatis oleh AI Studio).
-// Fresh clone: copy firebase-applet-config.example.json jadi
-// firebase-applet-config.json, atau isi VITE_FIREBASE_* di .env.
+// Config: murni dari env (VITE_FIREBASE_* dibake saat build via --build-arg).
 const env = import.meta.env;
 const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseFileConfig.apiKey,
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseFileConfig.authDomain,
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseFileConfig.projectId,
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseFileConfig.storageBucket,
-  messagingSenderId:
-    env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseFileConfig.messagingSenderId,
-  appId: env.VITE_FIREBASE_APP_ID || firebaseFileConfig.appId,
+  apiKey: env.VITE_FIREBASE_API_KEY || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: env.VITE_FIREBASE_APP_ID || '',
 };
-const firestoreDatabaseId =
-  env.VITE_FIRESTORE_DATABASE_ID || firebaseFileConfig.firestoreDatabaseId;
+const firestoreDatabaseId = env.VITE_FIRESTORE_DATABASE_ID || '(default)';
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
