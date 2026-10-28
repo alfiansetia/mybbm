@@ -3,6 +3,8 @@ import { DEFAULT_COORDS, formatCoordLabel } from '../utils/geo';
 
 export type LocationStatus = 'idle' | 'loading' | 'success' | 'error';
 
+export type LocationPermission = 'granted' | 'denied' | 'prompt' | 'unknown';
+
 interface UseUserLocationResult {
   coords: [number, number];
   accuracyM: number | null;
@@ -10,6 +12,8 @@ interface UseUserLocationResult {
   status: LocationStatus;
   error: string | null;
   isFallback: boolean;
+  /** Status izin browser — 'denied' = diblokir di site settings, retry sia-sia. */
+  permissionState: LocationPermission;
   requestLocation: () => void;
 }
 
@@ -99,6 +103,7 @@ export function useUserLocation(autoRequest = true): UseUserLocationResult {
     loadPersistedLocation() ? 'success' : 'idle'
   );
   const [error, setError] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState<LocationPermission>('unknown');
   const watchId = useRef<number | null>(null);
   const labelFetchedFor = useRef<string>('');
   const explicitReq = useRef(false);
@@ -187,6 +192,39 @@ export function useUserLocation(autoRequest = true): UseUserLocationResult {
     );
   }, [applyError, applyPosition, status]);
 
+  // Pantau status izin browser: 'denied' permanen = retry sia-sia, user harus buka site settings.
+  useEffect(() => {
+    const perms = navigator.permissions;
+    if (!perms?.query) return;
+    let alive = true;
+    let permStatus: PermissionStatus | null = null;
+    perms
+      .query({ name: 'geolocation' as PermissionName })
+      .then((s) => {
+        if (!alive) return;
+        permStatus = s;
+        setPermissionState(s.state as LocationPermission);
+        s.onchange = () => {
+          setPermissionState(s.state as LocationPermission);
+          // Izin baru dibuka → langsung ambil posisi tanpa nunggu ketukan.
+          if (s.state === 'granted') {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => void applyPosition(pos),
+              (err) => applyError(err),
+              GEO_OPTIONS
+            );
+          }
+        };
+      })
+      .catch(() => {
+        // Permissions API tidak didukung — abaikan, error geolocation tetap ditangani.
+      });
+    return () => {
+      alive = false;
+      if (permStatus) permStatus.onchange = null;
+    };
+  }, [applyError, applyPosition]);
+
   // Auto-request sekali saat mount + live update via watchPosition.
   // Ada cache = refresh diam-diam (tanpa spinner/lompatan); tanpa cache = loading penuh.
   useEffect(() => {
@@ -233,6 +271,7 @@ export function useUserLocation(autoRequest = true): UseUserLocationResult {
     status,
     error,
     isFallback: status !== 'success',
+    permissionState,
     requestLocation,
   };
 }

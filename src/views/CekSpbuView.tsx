@@ -106,7 +106,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
   const [mapSource, setMapSource] = useState<MapSource>('google');
   const [osmSync, setOsmSync] = useState<{ phase: 'idle' | 'saving' | 'done'; saved: number }>({ phase: 'idle', saved: 0 });
   const syncedIds = React.useRef<Set<string> | null>(null);
-  const { coords: userCoords, accuracyM, label: locationLabel, status: locStatus, error: locError, isFallback, requestLocation } =
+  const { coords: userCoords, accuracyM, label: locationLabel, status: locStatus, error: locError, isFallback, permissionState, requestLocation } =
     useUserLocation(true);
 
   const radius = RADII[radiusIndex];
@@ -350,7 +350,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
               <p className="text-xs font-semibold text-slate-800 truncate mt-0.5">
                 {locating && isFallback ? 'Mencari lokasi GPS…' : locationLabel}
               </p>
-              {locError ? (
+              {locError && permissionState !== 'denied' ? (
                 <p className="text-[10px] text-red-500 truncate mt-0.5">{locError}</p>
               ) : accuracyM ? (
                 <p className="text-[10px] text-slate-400 mt-0.5">Akurasi ±{accuracyM} m</p>
@@ -381,6 +381,20 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
             <span className="material-symbols-outlined text-[15px] text-slate-400">expand_more</span>
           </span>
         </button>
+
+        {/* Izin diblokir permanen: retry sia-sia — arahkan ke site settings. */}
+        {permissionState === 'denied' && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+            <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0 mt-0.5">
+              location_off
+            </span>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              <strong>Izin lokasi diblokir.</strong> Ketuk ikon gembok/tune di address bar
+              → aktifkan <strong>Lokasi</strong> untuk situs ini, lalu ketuk ulang tombol lokasi.
+              Sementara itu SPBU dihitung dari titik terakhir tersimpan.
+            </p>
+          </div>
+        )}
 
         {/* Quick Search Input */}
         <div className="relative">
