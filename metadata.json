@@ -1,0 +1,6 @@
+{
+  "name": "mybbm - Catat Konsumsi & Cek Stok SPBU Real-Time",
+  "description": "Aplikasi mobile-first untuk mencatat & menganalisis pemakaian BBM kendaraan serta memantau ketersediaan stok & antrean SPBU crowdsourced di Indonesia.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

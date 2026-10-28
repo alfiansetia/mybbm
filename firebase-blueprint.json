@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account profile and reputation data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "credibilityScore": { "type": "number" },
+        "reputationPoints": { "type": "number" },
+        "isVerified": { "type": "boolean" },
+        "activeVehicleId": { "type": "string" },
+        "totalReports": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Vehicle registered by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["motor", "mobil"] },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "year": { "type": "number" },
+        "plateNumber": { "type": "string" },
+        "primaryFuel": { "type": "string" },
+        "currentOdo": { "type": "number" },
+        "averageKmL": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "name", "type", "plateNumber", "currentOdo"]
+    },
+    "FuelLog": {
+      "title": "FuelLog",
+      "description": "Log of vehicle fuel refilling and consumption",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "displayDate": { "type": "string" },
+        "stationName": { "type": "string" },
+        "stationBrand": { "type": "string" },
+        "fuelType": { "type": "string" },
+        "odometer": { "type": "number" },
+        "previousOdo": { "type": "number" },
+        "distanceKm": { "type": "number" },
+        "isFullTank": { "type": "boolean" },
+        "liters": { "type": "number" },
+        "pricePerLiter": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "calculatedKmL": { "type": "number" },
+        "costPerKm": { "type": "number" },
+        "efficiencyBadge": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "vehicleId", "fuelType", "odometer", "liters", "totalAmount"]
+    },
+    "GasStation": {
+      "title": "GasStation",
+      "description": "Gas station / SPBU details with crowdsourced stock and queue status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "brand": { "type": "string" },
+        "address": { "type": "string" },
+        "distanceKm": { "type": "number" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "queueStatus": { "type": "string", "enum": ["Sepi", "Sedang", "Panjang"] },
+        "queueEstimateText": { "type": "string" },
+        "queueMinutes": { "type": "number" },
+        "lastReportMinutesAgo": { "type": "number" },
+        "contributorsCount": { "type": "number" },
+        "verifiedCount": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "brand", "lat", "lng"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with reputation and settings"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "User vehicles registered for fuel tracking"
+    },
+    "/fuel_logs/{logId}": {
+      "schema": "FuelLog",
+      "description": "Fuel consumption fill-up log entries"
+    },
+    "/stations/{stationId}": {
+      "schema": "GasStation",
+      "description": "SPBU locations and realtime crowdsourced availability status"
+    }
+  }
+}

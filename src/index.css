@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary: #006194;
+    --primary-container: #007bb9;
+    --secondary: #006a63;
+    --secondary-container: #99efe5;
+    --tertiary: #894d00;
+    --surface: #f7f9ff;
+    --surface-container-lowest: #ffffff;
+    --surface-container-low: #f1f4fa;
+    --surface-container: #ebeef4;
+    --surface-container-high: #e5e8ee;
+    --surface-container-highest: #dfe3e8;
+    --on-surface: #181c20;
+    --on-surface-variant: #3f4850;
+    --outline: #707881;
+    --status-available: #059669;
+    --status-limited: #d97706;
+    --status-empty: #dc2626;
+    --spbu-pertamina: #ee2737;
+    --spbu-shell: #ffd200;
+    --spbu-vivo: #005baa;
+    --spbu-bp: #009900;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f7f9ff;
+    color: #181c20;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-display, .font-headline {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Leaflet marker styling */
+.custom-leaflet-marker {
+  background: transparent;
+  border: none;
+}
