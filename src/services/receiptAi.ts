@@ -170,9 +170,15 @@ export async function scanViaServer(base64: string, mimeType: string): Promise<R
   }
 
   if (!res.ok || !body.success || !body.data) {
-    // 503 = key server belum dipasang → pemanggil boleh coba fallback direct.
+    // 503 = layanan belum aktif → pesan ramah-user, JANGAN teruskan teks mentah server.
+    if (res.status === 503) {
+      throw new ReceiptScanError(
+        'NO_KEY',
+        'Scan AI belum aktif di aplikasi ini. Isi manual atau pakai contoh struk di bawah.'
+      );
+    }
     throw new ReceiptScanError(
-      res.status === 503 ? 'NO_KEY' : 'AI_ERROR',
+      'AI_ERROR',
       body.error || 'Scan AI gagal. Silakan isi manual atau pakai contoh struk.'
     );
   }

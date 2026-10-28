@@ -64,6 +64,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [showOdoWarningModal, setShowOdoWarningModal] = useState(false);
+  const [odoWarnKind, setOdoWarnKind] = useState<'lower' | 'jump'>('lower');
   /** Jalur scan: server (key rahasia) / direct (hosting statis + key VITE_) / off. */
   const [scanBackend, setScanBackend] = useState<'unknown' | 'server' | 'direct' | 'off'>('unknown');
   useEffect(() => {
@@ -91,6 +92,14 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         : 45;
   const litersOverCapacity = liters > tankCapacityL;
   const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
+  /**
+   * Jarak wajar maks sekali pengisian: kapasitas × efisiensi super-irit.
+   * Motor 70 km/L (ketat — motor jarang >300 km sekali isi).
+   * Mobil 40 km/L (longgar — 45 L × 40 = 1800 km, Jakarta–Surabaya PP masih lolos;
+   * hanya typo kelebihan digit yang kena).
+   */
+  const maxRangeKm = Math.round(tankCapacityL * (currentVehicle.type === 'motor' ? 70 : 40));
+  const distanceTooFar = distanceKm > maxRangeKm;
   const calculatedKmL = isFullTank && distanceKm > 0 && liters > 0 ? Number((distanceKm / liters).toFixed(1)) : undefined;
   const costPerKm = distanceKm > 0 && totalAmount > 0 ? Math.round(totalAmount / distanceKm) : undefined;
 
@@ -244,6 +253,12 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     }
     setFormError(null);
     if (!bypassOdoCheck && currentOdo < previousOdo) {
+      setOdoWarnKind('lower');
+      setShowOdoWarningModal(true);
+      return;
+    }
+    if (!bypassOdoCheck && distanceKm > maxRangeKm) {
+      setOdoWarnKind('jump');
       setShowOdoWarningModal(true);
       return;
     }
@@ -657,8 +672,13 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
             </div>
           </div>
 
-          {/* Full Tank Toggle */}
-          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex items-center justify-between">
+          {distanceTooFar && (
+            <p className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 tabular-nums">
+              Jarak {formatKm(distanceKm)} melebihi jangkauan wajar {currentVehicle.name} (±{formatKm(maxRangeKm)}) — cek lagi angka odonya.
+            </p>
+          )}
+
+          {/* Full Tank Toggle */}          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex items-center justify-between">
             <div className="flex items-start gap-2 max-w-[78%]">
               <span className="material-symbols-outlined text-[18px] text-[#006194] shrink-0 mt-0.5">
                 local_gas_station
@@ -876,19 +896,33 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         </p>
       </div>
 
-      {/* Modal Peringatan Odometer Lebih Rendah */}
+      {/* Modal Peringatan Odometer (lebih rendah / lompatan tak wajar) */}
       {showOdoWarningModal && (
         <Modal
           icon="warning"
           iconBg="bg-amber-100"
           iconColor="text-amber-600"
           title="Konfirmasi Angka Odometer"
-          subtitle="Angka lebih rendah dari catatan sebelumnya"
+          subtitle={
+            odoWarnKind === 'lower'
+              ? 'Angka lebih rendah dari catatan sebelumnya'
+              : 'Jarak tempuh tak wajar untuk sekali pengisian'
+          }
           onClose={() => setShowOdoWarningModal(false)}
         >
             <p className="text-xs text-slate-600 mb-4 bg-amber-50 p-3 rounded-xl border border-amber-200">
-              Odometer sekarang (<strong>{formatKm(currentOdo)}</strong>) lebih kecil dari odometer
-              sebelumnya (<strong>{formatKm(previousOdo)}</strong>). Tetap simpan log ini?
+              {odoWarnKind === 'lower' ? (
+                <>
+                  Odometer sekarang (<strong>{formatKm(currentOdo)}</strong>) lebih kecil dari odometer
+                  sebelumnya (<strong>{formatKm(previousOdo)}</strong>). Tetap simpan log ini?
+                </>
+              ) : (
+                <>
+                  Jarak tempuh <strong>{formatKm(distanceKm)}</strong> melebihi jangkauan wajar{' '}
+                  {currentVehicle.name} (±<strong>{formatKm(maxRangeKm)}</strong>). Kemungkinan salah
+                  ketik (kelebihan digit). Tetap simpan log ini?
+                </>
+              )}
             </p>
 
             <div className="flex gap-2">

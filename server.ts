@@ -52,12 +52,13 @@ app.post('/api/scan-receipt', async (req, res) => {
 
     if (!aiClient) {
       // Jujur: AI tidak tersedia, jangan kirim data palsu seolah hasil OCR.
+      // Pesan ramah-user (tanpa istilah env/key); detail dev hanya di log server.
+      console.warn('[scan-receipt] GEMINI_API_KEY belum dikonfigurasi di environment server.');
       return res.status(503).json({
         success: false,
         source: 'heuristic-unavailable',
         isFallback: true,
-        error:
-          'GEMINI_API_KEY belum dikonfigurasi. Upload dibatalkan — silakan isi manual atau pakai contoh struk.',
+        error: 'Layanan scan AI belum aktif. Silakan isi manual atau pakai contoh struk.',
         data: null,
       });
     }
