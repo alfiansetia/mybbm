@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Vehicle,
   GasStation,
@@ -78,12 +78,22 @@ export default function App() {
   const [catatInitialMode, setCatatInitialMode] = useState<'scan' | 'manual'>('scan');
   const [selectedStationDetailId, setSelectedStationDetailId] = useState<string | null>(null);
 
+  // Refs untuk hindari stale closure di subscription Firestore
+  const activeVehicleIdRef = useRef(activeVehicleId);
+  const vehiclesRef = useRef(vehicles);
+  useEffect(() => {
+    activeVehicleIdRef.current = activeVehicleId;
+  }, [activeVehicleId]);
+  useEffect(() => {
+    vehiclesRef.current = vehicles;
+  }, [vehicles]);
+
   // Test Firestore connection on mount
   useEffect(() => {
     testConnection();
   }, []);
 
-  // Subscribe to real-time SPBU stations from Firestore
+  // 1. Stations: publik, tidak butuh auth — subscribe sekali saja
   useEffect(() => {
     const unsubscribe = subscribeStations((cloudStations) => {
       if (cloudStations && cloudStations.length > 0) {
@@ -96,68 +106,78 @@ export default function App() {
     };
   }, []);
 
-  // Listen to Firebase Auth state
+  // 2. Auth listener saja — jalan sekali, tidak depend ke activeVehicleId
+  // (sebelumnya depend [activeVehicleId] bikin resubscribe + leak tiap ganti kendaraan)
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+    });
+    return () => unsubscribeAuth();
+  }, []);
 
-      if (user) {
-        // User logged in: subscribe to their user profile in Firestore
-        const unsubProfile = subscribeUserProfile(user.uid, (profile) => {
-          if (profile) {
-            setUserProfile(profile);
-            localStorage.setItem('mybbm_user', JSON.stringify(profile));
-          } else {
-            // First time login for this user: persist default profile to Firestore
-            const newProfile: UserProfile = {
-              name: user.displayName || user.email?.split('@')[0] || 'Pengendara',
-              email: user.email || 'pengendara@gmail.com',
-              avatar:
-                user.photoURL ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-              credibilityScore: 5.0,
-              reputationPoints: 100,
-              isVerified: true,
-              activeVehicleId: activeVehicleId,
-              totalReports: 0,
-            };
-            setUserProfile(newProfile);
-            saveUserProfileToDb(user.uid, newProfile);
-          }
-        });
+  // 3. User-scoped sync — jalan hanya saat uid berubah
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
 
-        // Subscribe to user's vehicles in Firestore
-        const unsubVehicles = subscribeVehicles(user.uid, (cloudVehicles) => {
-          if (cloudVehicles && cloudVehicles.length > 0) {
-            setVehicles(cloudVehicles);
-            if (!cloudVehicles.some((v) => v.id === activeVehicleId)) {
-              setActiveVehicleId(cloudVehicles[0].id);
-            }
-          } else {
-            // Seed current vehicles to Firestore for this user
-            vehicles.forEach((v) => {
-              saveVehicleToDb({ ...v, userId: user.uid });
-            });
-          }
-        });
-
-        // Subscribe to user's fuel logs in Firestore
-        const unsubLogs = subscribeLogs(user.uid, (cloudLogs) => {
-          if (cloudLogs && cloudLogs.length > 0) {
-            setLogs(cloudLogs);
-          }
-        });
-
-        return () => {
-          unsubProfile();
-          unsubVehicles();
-          unsubLogs();
+    const unsubProfile = subscribeUserProfile(uid, (profile) => {
+      if (profile) {
+        setUserProfile(profile);
+        localStorage.setItem('mybbm_user', JSON.stringify(profile));
+        if (profile.activeVehicleId) {
+          setActiveVehicleId(profile.activeVehicleId);
+        }
+      } else {
+        // First time login: persist default profile ke Firestore
+        const newProfile: UserProfile = {
+          name: currentUser.displayName || currentUser.email?.split('@')[0] || 'Pengendara',
+          email: currentUser.email || 'pengendara@gmail.com',
+          avatar:
+            currentUser.photoURL ||
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+          credibilityScore: 5.0,
+          reputationPoints: 100,
+          isVerified: true,
+          activeVehicleId: activeVehicleIdRef.current,
+          totalReports: 0,
         };
+        setUserProfile(newProfile);
+        saveUserProfileToDb(uid, newProfile);
       }
     });
 
-    return () => unsubscribeAuth();
-  }, [activeVehicleId]);
+    const unsubVehicles = subscribeVehicles(uid, (cloudVehicles) => {
+      if (cloudVehicles && cloudVehicles.length > 0) {
+        setVehicles(cloudVehicles);
+        if (!cloudVehicles.some((v) => v.id === activeVehicleIdRef.current)) {
+          setActiveVehicleId(cloudVehicles[0].id);
+        }
+      } else {
+        // Seed hanya sekali saat cloud kosong, pakai snapshot ref (hindari forEach tanpa await)
+        const localVehicles = vehiclesRef.current;
+        if (localVehicles.length > 0) {
+          (async () => {
+            for (const v of localVehicles) {
+              await saveVehicleToDb({ ...v, userId: uid });
+            }
+          })();
+        }
+      }
+    });
+
+    const unsubLogs = subscribeLogs(uid, (cloudLogs) => {
+      if (cloudLogs && cloudLogs.length > 0) {
+        setLogs(cloudLogs);
+      }
+    });
+
+    return () => {
+      unsubProfile();
+      unsubVehicles();
+      unsubLogs();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid]);
 
   // Sync to localStorage
   useEffect(() => {

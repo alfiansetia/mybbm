@@ -29,7 +29,10 @@ if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
   });
 }
 
-// Receipt OCR API using Gemini 3.8 Flash Multimodal
+// Receipt OCR API using Gemini Multimodal
+// Model bisa dioverride via env GEMINI_MODEL (default: gemini-2.0-flash)
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+
 app.post('/api/scan-receipt', async (req, res) => {
   try {
     const { imageBase64, mimeType = 'image/jpeg' } = req.body;
@@ -37,96 +40,103 @@ app.post('/api/scan-receipt', async (req, res) => {
     if (!imageBase64) {
       return res.status(400).json({
         success: false,
+        source: 'validation',
+        isFallback: false,
         error: 'Data gambar struk diperlukan (base64 string)',
+        data: null,
       });
     }
 
     // Clean base64 header if present
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
-    if (aiClient) {
-      try {
-        const prompt = `Kamu adalah sistem OCR AI presisi tinggi untuk struk pengisian bahan bakar (SPBU) di Indonesia (Pertamina, Shell, Vivo, BP, atau Kios Eceran/Pertamini).
-Analisis gambar struk ini dan ekstrak data berikut dalam format JSON strictly valid:
-- stationName: string (contoh: "SPBU Pertamina 31.12802" atau "Shell MT Haryono")
-- stationBrand: string ("Pertamina", "Shell", "Vivo", "BP", "Other (Toko Madura)", atau "Lainnya")
-- address: string (alamat singkat jika terbaca)
-- dateTime: string (tanggal dan waktu pengisian, contoh: "17 Okt 2026, 08:45 WIB" atau format ISO)
-- fuelType: string ("Pertalite", "Pertamax", "Pertamax Turbo", "Solar", "Bio Solar", "Dexlite", "Shell Super", "Shell V-Power", "BP 92", dll)
-- liters: number (jumlah liter terisi dengan desimal, misal 3.80)
-- pricePerLiter: number (harga satuan per liter dalam rupiah, misal 10000)
-- totalAmount: number (total bayar dalam rupiah, misal 38000)
-- paymentMethod: string ("QRIS / MyPertamina", "Tunai", "Debit BCA", "Kartu Kredit", dll)
-- confidence: number (perkiraan akurasi pembacaan 80-100)
-- transactionNumber: string (nomor transaksi atau invoice jika ada)
-
-Jika ada bagian teks yang buram, buat tebakan paling masuk akal berdasarkan harga bensin resmi Indonesia (Pertalite Rp 10.000, Pertamax Rp 12.950, Bio Solar Rp 6.800). Kembalikan HANYA JSON.`;
-
-        const response = await aiClient.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: {
-            parts: [
-              {
-                inlineData: {
-                  data: cleanBase64,
-                  mimeType: mimeType,
-                },
-              },
-              {
-                text: prompt,
-              },
-            ],
-          },
-          config: {
-            responseMimeType: 'application/json',
-          },
-        });
-
-        const rawText = response.text?.trim() || '{}';
-        const parsed = JSON.parse(rawText);
-
-        return res.json({
-          success: true,
-          source: 'gemini-ai',
-          data: {
-            stationName: parsed.stationName || 'SPBU Pertamina 31.12802',
-            stationBrand: parsed.stationBrand || 'Pertamina',
-            address: parsed.address || 'Jl. MT Haryono Kav. 18, Jakarta Selatan',
-            dateTime: parsed.dateTime || '17 Okt 2026, 08:45 WIB',
-            fuelType: parsed.fuelType || 'Pertalite',
-            liters: Number(parsed.liters) || 3.8,
-            pricePerLiter: Number(parsed.pricePerLiter) || 10000,
-            totalAmount: Number(parsed.totalAmount) || 38000,
-            paymentMethod: parsed.paymentMethod || 'QRIS / MyPertamina',
-            confidence: parsed.confidence || 98,
-            transactionNumber: parsed.transactionNumber || 'TRX-98402/20261017',
-          },
-        });
-      } catch (geminiError: any) {
-        console.warn('Gemini vision API error, falling back to heuristic parsing:', geminiError?.message);
-      }
+    if (!aiClient) {
+      // Jujur: AI tidak tersedia, jangan kirim data palsu seolah hasil OCR.
+      return res.status(503).json({
+        success: false,
+        source: 'heuristic-unavailable',
+        isFallback: true,
+        error:
+          'GEMINI_API_KEY belum dikonfigurasi. Upload dibatalkan — silakan isi manual atau pakai contoh struk.',
+        data: null,
+      });
     }
 
-    // High quality heuristic fallback if API key is unconfigured or transient network issue
-    // Generates realistic Indonesian SPBU parsed receipt data
-    return res.json({
-      success: true,
-      source: 'smart-heuristic-extractor',
-      data: {
-        stationName: 'SPBU Pertamina 31.12802',
-        stationBrand: 'Pertamina',
-        address: 'Jl. MT Haryono Kav. 18, Tebet Barat, Jakarta Selatan',
-        dateTime: '17 Okt 2026, 08:45 WIB',
-        fuelType: 'Pertalite',
-        liters: 3.8,
-        pricePerLiter: 10000,
-        totalAmount: 38000,
-        paymentMethod: 'QRIS / MyPertamina',
-        confidence: 96,
-        transactionNumber: 'TRX-98402/20261017',
-        note: 'Struk berhasil dianalisis dengan OCR lokal engine',
-      },
-    });
+    try {
+      const prompt = `Kamu adalah sistem OCR AI presisi tinggi untuk struk pengisian bahan bakar (SPBU) di Indonesia (Pertamina, Shell, Vivo, BP, atau Kios Eceran/Pertamini).
+Analisis gambar struk ini dan ekstrak data berikut dalam format JSON strictly valid:
+- stationName: string | null (contoh: "SPBU Pertamina 31.12802" atau "Shell MT Haryono")
+- stationBrand: string | null ("Pertamina", "Shell", "Vivo", "BP", "Other (Toko Madura)", atau "Lainnya")
+- address: string | null (alamat singkat jika terbaca)
+- dateTime: string | null (tanggal dan waktu pengisian, contoh: "17 Okt 2026, 08:45 WIB" atau format ISO)
+- fuelType: string | null ("Pertalite", "Pertamax", "Pertamax Turbo", "Solar", "Bio Solar", "Dexlite", "Shell Super", "Shell V-Power", "BP 92", dll)
+- liters: number | null (jumlah liter terisi dengan desimal, misal 3.80)
+- pricePerLiter: number | null (harga satuan per liter dalam rupiah, misal 10000)
+- totalAmount: number | null (total bayar dalam rupiah, misal 38000)
+- paymentMethod: string | null ("QRIS / MyPertamina", "Tunai", "Debit BCA", "Kartu Kredit", dll)
+- confidence: number | null (perkiraan akurasi pembacaan 0-100)
+- transactionNumber: string | null (nomor transaksi atau invoice jika ada)
+
+Jika bagian teks buram atau tidak terbaca, isi dengan null — JANGAN mengarang. Kembalikan HANYA JSON.`;
+
+      const response = await aiClient.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: mimeType,
+              },
+            },
+            {
+              text: prompt,
+            },
+          ],
+        },
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const rawText = response.text?.trim() || '{}';
+      const parsed = JSON.parse(rawText);
+
+      const toNumberOrNull = (v: unknown) => {
+        if (v === null || v === undefined || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      return res.json({
+        success: true,
+        source: 'gemini-ai',
+        isFallback: false,
+        data: {
+          stationName: parsed.stationName ?? null,
+          stationBrand: parsed.stationBrand ?? null,
+          address: parsed.address ?? null,
+          dateTime: parsed.dateTime ?? null,
+          fuelType: parsed.fuelType ?? null,
+          liters: toNumberOrNull(parsed.liters),
+          pricePerLiter: toNumberOrNull(parsed.pricePerLiter),
+          totalAmount: toNumberOrNull(parsed.totalAmount),
+          paymentMethod: parsed.paymentMethod ?? null,
+          confidence: toNumberOrNull(parsed.confidence),
+          transactionNumber: parsed.transactionNumber ?? null,
+        },
+      });
+    } catch (geminiError: any) {
+      console.warn('Gemini vision API error:', geminiError?.message);
+      // Jujur: gagal AI, bukan data palsu.
+      return res.status(502).json({
+        success: false,
+        source: 'gemini-error',
+        isFallback: true,
+        error: 'Gagal membaca struk via AI. Coba lagi atau isi manual.',
+        data: null,
+      });
+    }
   } catch (error: any) {
     console.error('Scan error:', error);
     return res.status(500).json({

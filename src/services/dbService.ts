@@ -21,6 +21,7 @@ const USERS_COLLECTION = 'users';
 /**
  * Real-time subscription to Gas Stations.
  * Seeds initial stations to Firestore if the collection is empty.
+ * Selalu return unsubscribe function (noop kalau gagal init).
  */
 export function subscribeStations(onUpdate: (stations: GasStation[]) => void): () => void {
   try {
@@ -56,6 +57,7 @@ export function subscribeStations(onUpdate: (stations: GasStation[]) => void): (
     return unsubscribe;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, STATIONS_COLLECTION);
+    return () => {};
   }
 }
 
@@ -99,6 +101,7 @@ export function subscribeVehicles(
     return unsubscribe;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
+    return () => {};
   }
 }
 
@@ -159,6 +162,7 @@ export function subscribeLogs(
     return unsubscribe;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
+    return () => {};
   }
 }
 
@@ -214,6 +218,7 @@ export function subscribeUserProfile(
     return unsubscribe;
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
+    return () => {};
   }
 }
 

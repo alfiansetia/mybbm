@@ -20,7 +20,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'scan' | 'manual'>(initialMode);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanConfidence, setScanConfidence] = useState<number | null>(98);
+  const [scanConfidence, setScanConfidence] = useState<number | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   // Form states
@@ -67,6 +68,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
   // Preset receipt samples for quick demo
   const handleApplyPresetReceipt = (type: 'pertamina' | 'shell' | 'solar') => {
+    setScanError(null);
     setIsScanning(true);
     setTimeout(() => {
       if (type === 'pertamina') {
@@ -111,6 +113,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       const base64Data = reader.result as string;
       setReceiptPreview(base64Data);
       setIsScanning(true);
+      setScanError(null);
 
       try {
         const response = await fetch('/api/scan-receipt', {
@@ -123,20 +126,30 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         });
 
         const resData = await response.json();
-        if (resData.success && resData.data) {
+        if (resData.success && resData.data && !resData.isFallback) {
           const d = resData.data;
           if (d.stationName) setStationName(d.stationName);
           if (d.stationBrand) setStationBrand(d.stationBrand);
           if (d.fuelType) setFuelType(d.fuelType);
-          if (d.liters) setLiters(d.liters);
-          if (d.pricePerLiter) setPricePerLiter(d.pricePerLiter);
-          if (d.totalAmount) setTotalAmount(d.totalAmount);
+          if (d.liters != null) setLiters(Number(d.liters));
+          if (d.pricePerLiter != null) setPricePerLiter(Number(d.pricePerLiter));
+          if (d.totalAmount != null) setTotalAmount(Number(d.totalAmount));
           if (d.paymentMethod) setPaymentMethod(d.paymentMethod);
-          if (d.confidence) setScanConfidence(d.confidence);
+          if (d.confidence != null) setScanConfidence(Number(d.confidence));
+          else setScanConfidence(null);
           if (d.dateTime) setDateTime(d.dateTime);
+          setScanError(null);
+        } else {
+          // Backend jujur: AI tidak tersedia / gagal — jangan isi data palsu.
+          setScanConfidence(null);
+          setScanError(
+            resData.error || 'Scan AI gagal. Silakan isi manual atau pakai contoh struk.'
+          );
         }
       } catch (err) {
-        console.warn('Scan request error, fallback used:', err);
+        console.warn('Scan request error:', err);
+        setScanConfidence(null);
+        setScanError('Koneksi scan gagal. Silakan isi manual.');
       } finally {
         setIsScanning(false);
       }
@@ -250,9 +263,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 <div className="flex justify-between items-center relative p-1 rounded bg-teal-50/70 border border-teal-100">
                   <span className="text-slate-500">VOLUME (L) :</span>
                   <span className="font-extrabold tabular-nums">{liters.toFixed(3)} L</span>
-                  <span className="absolute -bottom-1 -left-1 bg-[#006a63] text-white px-1 rounded text-[7px]">
-                    OCR {scanConfidence || 98}%
-                  </span>
+                  {scanConfidence != null && (
+                    <span className="absolute -bottom-1 -left-1 bg-[#006a63] text-white px-1 rounded text-[7px]">
+                      OCR {scanConfidence}%
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex justify-between items-center p-1 rounded bg-teal-50/70 border border-teal-100">
@@ -332,18 +347,34 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
             </div>
           </div>
 
-          {/* Success Status Ribbon */}
-          <div className="bg-teal-900/40 border-t border-teal-800/60 px-3 py-2 flex items-center justify-between text-teal-100">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-teal-400 text-[18px]">auto_awesome</span>
-              <p className="text-xs font-semibold">
-                Struk terbaca akurat <span className="text-teal-300 font-bold">({scanConfidence || 98}%)</span>
-              </p>
+          {/* Scan Status Ribbon — jujur: sukses vs gagal */}
+          {scanError ? (
+            <div className="bg-amber-900/40 border-t border-amber-800/60 px-3 py-2 flex items-center gap-1.5 text-amber-100">
+              <span className="material-symbols-outlined text-amber-400 text-[18px]">warning</span>
+              <p className="text-xs font-semibold">{scanError}</p>
             </div>
-            <span className="bg-[#006a63] text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px]">check</span> AI Extracted
-            </span>
-          </div>
+          ) : (
+            <div className="bg-teal-900/40 border-t border-teal-800/60 px-3 py-2 flex items-center justify-between text-teal-100">
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-teal-400 text-[18px]">auto_awesome</span>
+                <p className="text-xs font-semibold">
+                  {scanConfidence != null ? (
+                    <>
+                      Struk terbaca akurat{' '}
+                      <span className="text-teal-300 font-bold">({scanConfidence}%)</span>
+                    </>
+                  ) : (
+                    'Upload struk untuk scan AI, atau pakai contoh / isi manual'
+                  )}
+                </p>
+              </div>
+              {scanConfidence != null && (
+                <span className="bg-[#006a63] text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">check</span> AI Extracted
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
