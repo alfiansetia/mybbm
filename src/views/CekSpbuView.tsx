@@ -69,7 +69,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col w-full gap-4 pb-8">
+    <div className="flex flex-col w-full gap-4 pb-28">
       {/* 1. Floating Live Monitor Ribbon */}
       <div className="flex items-center justify-between px-3.5 py-1.5 rounded-full bg-[#99efe5]/40 text-[#006f67] border border-[#006a63]/20 shadow-xs">
         <div className="flex items-center gap-2 min-w-0">

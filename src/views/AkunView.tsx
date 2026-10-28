@@ -274,88 +274,38 @@ export const AkunView: React.FC<AkunViewProps> = ({
         </div>
       </div>
 
-      {/* 4. App Info, Production Readiness & Reset */}
+      {/* 4. Tentang Aplikasi & Reset */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900 font-headline">Status Sistem & Produksi</h3>
-          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            PRODUCTION LIVE
-          </span>
-        </div>
+        <h3 className="text-sm font-bold text-slate-900 font-headline">Tentang Aplikasi</h3>
 
-        {/* Database */}
         <div className="flex items-center justify-between text-xs text-slate-700 py-1 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-[#006194]">database</span>
-            <div>
-              <span className="font-semibold block text-slate-800">Cloud Firestore DB</span>
-              <span className="text-[10px] text-slate-400 font-mono">ai-studio-mybbmcatatkonsum-0da4abca...</span>
-            </div>
+            <span className="material-symbols-outlined text-[18px] text-[#006194]">info</span>
+            <span className="font-semibold">Versi aplikasi</span>
           </div>
-          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            Terhubung
-          </span>
+          <span className="text-slate-500 text-[11px] font-bold">mybbm 1.0</span>
         </div>
 
-        {/* Security Rules */}
         <div className="flex items-center justify-between text-xs text-slate-700 py-1 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-[#006194]">security</span>
-            <div>
-              <span className="font-semibold block text-slate-800">Security Rules</span>
-              <span className="text-[10px] text-slate-400">Deployed & RBAC Enforced</span>
-            </div>
-          </div>
-          <span className="text-emerald-700 text-[11px] font-bold">Aktif</span>
-        </div>
-
-        {/* Google Maps API */}
-        <div className="flex items-center justify-between text-xs text-slate-700 py-1 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-red-500">location_on</span>
-            <div>
-              <span className="font-semibold block text-slate-800">Google Maps Platform</span>
-              <span className="text-[10px] text-slate-400">Maps JavaScript API & Geolocation</span>
-            </div>
-          </div>
-          <span className="text-emerald-700 text-[11px] font-bold">Aktif</span>
-        </div>
-
-        {/* Service Tracker Engine */}
-        <div className="flex items-center justify-between text-xs text-slate-700 py-1 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-amber-500">build_circle</span>
-            <div>
-              <span className="font-semibold block text-slate-800">Service Tracker OEM</span>
-              <span className="text-[10px] text-slate-400">Interval 4.000km / 10.000km & Alert &lt;500km</span>
-            </div>
-          </div>
-          <span className="text-emerald-700 text-[11px] font-bold">Siap</span>
-        </div>
-
-        {/* PWA & Offline Sync */}
-        <div className="flex items-center justify-between text-xs text-slate-700 py-1 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-[#006a63]">offline_pin</span>
-            <span>PWA & Sinkronisasi Offline</span>
+            <span className="material-symbols-outlined text-[18px] text-[#006194]">lock</span>
+            <span className="font-semibold">Data tersimpan aman di akunmu</span>
           </div>
           <span className="text-[#059669] font-bold text-[11px]">Aktif</span>
         </div>
 
-        {/* Reset Dummy Data Action */}
-        <div className="pt-2">
+        {/* Reset Data Pribadi */}
+        <div className="pt-1">
           <button
             onClick={() => setIsResetModalOpen(true)}
             className="w-full text-xs text-red-600 hover:text-red-700 bg-red-50/80 hover:bg-red-100/80 border border-red-200 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
             type="button"
           >
             <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-            <span>Reset Dummy Data ke Kondisi Awal</span>
+            <span>Hapus Data Saya</span>
           </button>
           <p className="text-[10px] text-slate-400 text-center mt-1">
-            Mengembalikan garasi kendaraan, log konsumsi BBM, dan SPBU ke data demo awal yang bersih.
+            Menghapus kendaraan, riwayat BBM, dan statistik akunmu. Data SPBU publik tidak ikut terhapus.
           </p>
         </div>
       </div>

@@ -35,7 +35,9 @@ import { User as FirebaseUser } from 'firebase/auth';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav, NavTab } from './components/BottomNav';
 import { EmptyState } from './components/EmptyState';
+import { RequireLogin } from './components/RequireLogin';
 import { BerandaView } from './views/BerandaView';
+import { GuestBerandaView } from './views/GuestBerandaView';
 import { CekSpbuView } from './views/CekSpbuView';
 import { CatatBbmView } from './views/CatatBbmView';
 import { DetailSpbuView } from './views/DetailSpbuView';
@@ -270,11 +272,15 @@ export default function App() {
     setActiveTab('beranda');
   };
 
-  // Community reporting and write to Firestore
+  // Community reporting and write to Firestore (wajib login)
   const handleSubmitReport = async (
     stationId: string,
     newReportData: Omit<CommunityReport, 'id' | 'timestamp'>
   ) => {
+    if (!currentUser) {
+      await handleGoogleLogin();
+      return;
+    }
     const reportId = `rep-${Date.now()}`;
     const newReport: CommunityReport = {
       ...newReportData,
@@ -353,12 +359,16 @@ export default function App() {
     }
   };
 
-  // Peer verification: vote thumbs up or thumbs down
+  // Peer verification: vote thumbs up or thumbs down (wajib login)
   const handleVoteReport = async (
     stationId: string,
     reportId: string,
     voteType: 'up' | 'down'
   ) => {
+    if (!currentUser) {
+      await handleGoogleLogin();
+      return;
+    }
     let targetUpdatedStation: GasStation | null = null;
 
     setStations((prev) =>
@@ -480,6 +490,10 @@ export default function App() {
   };
 
   const handleAddVehicle = async (newVeh: Omit<Vehicle, 'id'>) => {
+    if (!currentUser) {
+      await handleGoogleLogin();
+      return;
+    }
     const id = `veh-${Date.now()}`;
     const vehicleWithId = { ...newVeh, id };
     setVehicles((prev) => [...prev, vehicleWithId]);
@@ -556,20 +570,12 @@ export default function App() {
   else if (activeTab === 'statistik') subtitle = 'Statistik & Analisis';
   else if (activeTab === 'akun') subtitle = 'Akun & Kendaraan';
 
-  // Tab yang butuh kendaraan aktif
+  // Tab yang butuh kendaraan aktif — hanya berlaku bila sudah login.
+  // Tamu tetap bisa buka beranda (versi publik), cek SPBU, dan detail.
+  const isGuest = !currentUser;
   const needsVehicle =
-    activeTab === 'beranda' || activeTab === 'catat-bbm' || activeTab === 'statistik';
-
-  // Wajib login: tamu hanya melihat ajakan masuk, tanpa data siapa pun
-  if (!currentUser) {
-    return (
-      <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
-        <main className="flex-1 flex flex-col w-full max-w-[480px] mx-auto px-4 pt-20 pb-safe">
-          <LoginGate onLogin={handleGoogleLogin} />
-        </main>
-      </div>
-    );
-  }
+    !!currentUser &&
+    (activeTab === 'beranda' || activeTab === 'catat-bbm' || activeTab === 'statistik');
 
   return (
     <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
@@ -590,9 +596,22 @@ export default function App() {
           <DetailSpbuView
             station={selectedStation}
             userProfile={userProfile}
+            isGuest={isGuest}
+            onRequireLogin={handleGoogleLogin}
             onBack={() => setSelectedStationDetailId(null)}
             onSubmitReport={handleSubmitReport}
             onVoteReport={handleVoteReport}
+          />
+        ) : isGuest && (activeTab === 'catat-bbm' || activeTab === 'statistik') ? (
+          <RequireLogin
+            title={activeTab === 'catat-bbm' ? 'Catat BBM perlu login' : 'Statistik perlu login'}
+            hint={
+              activeTab === 'catat-bbm'
+                ? 'Masuk untuk menambah kendaraan dan menyimpan riwayat pengisian BBM-mu.'
+                : 'Masuk untuk melihat tren konsumsi, biaya, dan insight kendaraanmu.'
+            }
+            icon={activeTab === 'catat-bbm' ? 'edit_note' : 'bar_chart'}
+            onLogin={handleGoogleLogin}
           />
         ) : !activeVehicle && needsVehicle ? (
           <EmptyState
@@ -603,22 +622,31 @@ export default function App() {
             onAction={() => handleNavigateTab('akun')}
           />
         ) : activeTab === 'beranda' ? (
-          <BerandaView
-            activeVehicle={activeVehicle!}
-            logs={logs}
-            stations={stations}
-            onNavigateTab={handleNavigateTab}
-            onSelectStation={handleSelectStation}
-            onOpenReportModal={(stationId) => {
-              if (stationId) {
-                handleSelectStation(stationId);
-              } else {
-                handleSelectStation(stations[1]?.id || stations[0]?.id);
-              }
-            }}
-            onExportData={handleExportCSV}
-            onChangeVehicle={() => handleNavigateTab('akun')}
-          />
+          isGuest ? (
+            <GuestBerandaView
+              stations={stations}
+              onSelectStation={handleSelectStation}
+              onNavigateTab={handleNavigateTab}
+              onLogin={handleGoogleLogin}
+            />
+          ) : (
+            <BerandaView
+              activeVehicle={activeVehicle!}
+              logs={logs}
+              stations={stations}
+              onNavigateTab={handleNavigateTab}
+              onSelectStation={handleSelectStation}
+              onOpenReportModal={(stationId) => {
+                if (stationId) {
+                  handleSelectStation(stationId);
+                } else {
+                  handleSelectStation(stations[1]?.id || stations[0]?.id);
+                }
+              }}
+              onExportData={handleExportCSV}
+              onChangeVehicle={() => handleNavigateTab('akun')}
+            />
+          )
         ) : activeTab === 'cek-spbu' ? (
           <CekSpbuView
             stations={stations}
@@ -665,37 +693,6 @@ export default function App() {
       {!selectedStationDetailId && (
         <BottomNav activeTab={activeTab} onChangeTab={handleNavigateTab} />
       )}
-    </div>
-  );
-}
-
-// Pintu masuk untuk tamu: tanpa data dummy, tanpa bocoran data user lain
-function LoginGate({ onLogin }: { onLogin: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center text-center gap-4 py-16 animate-in fade-in duration-150">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#006194] to-[#007bb9] flex items-center justify-center text-white shadow-lg">
-        <span className="material-symbols-outlined text-[36px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-          water_drop
-        </span>
-      </div>
-      <div>
-        <h1 className="text-xl font-extrabold text-slate-900 font-headline">mybbm</h1>
-        <p className="text-sm text-slate-600 mt-1 max-w-[280px]">
-          Catat konsumsi BBM kendaraanmu dan pantau stok SPBU. Masuk untuk melihat datamu sendiri.
-        </p>
-      </div>
-      <button
-        onClick={onLogin}
-        type="button"
-        className="h-11 px-6 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-sm font-bold flex items-center gap-2 shadow-md active:scale-[0.99] transition-all"
-      >
-        <span className="material-symbols-outlined text-[20px]">login</span>
-        <span>Masuk dengan Google</span>
-      </button>
-      <p className="text-[11px] text-slate-400 flex items-center gap-1">
-        <span className="material-symbols-outlined text-[13px]">lock</span>
-        <span>Datamu hanya tersimpan di akunmu sendiri</span>
-      </p>
     </div>
   );
 }

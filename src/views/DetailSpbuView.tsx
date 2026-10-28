@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { GasStation, CommunityReport, UserProfile } from '../types';
+import { MapErrorBoundary } from '../components/MapErrorBoundary';
 import { ReputationBadge } from '../components/ReputationBadge';
 import { StatusPill } from '../components/StatusPill';
 import { formatRupiah } from '../utils/format';
@@ -8,6 +9,8 @@ import { formatRupiah } from '../utils/format';
 interface DetailSpbuViewProps {
   station: GasStation;
   userProfile: UserProfile;
+  isGuest?: boolean;
+  onRequireLogin?: () => void;
   onBack: () => void;
   onSubmitReport: (stationId: string, newReport: Omit<CommunityReport, 'id' | 'timestamp'>) => void;
   onVoteReport: (stationId: string, reportId: string, voteType: 'up' | 'down') => void;
@@ -16,6 +19,8 @@ interface DetailSpbuViewProps {
 export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   station,
   userProfile,
+  isGuest = false,
+  onRequireLogin,
   onBack,
   onSubmitReport,
   onVoteReport,
@@ -38,6 +43,11 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   };
 
   const handleVote = (voteType: 'up' | 'down') => {
+    if (isGuest) {
+      onRequireLogin?.();
+      showToast('Masuk dulu untuk verifikasi info — bantu jaga akurasi data.');
+      return;
+    }
     if (!primaryReport) return;
     onVoteReport(station.id, primaryReport.id, voteType);
     if (voteType === 'up') {
@@ -49,6 +59,10 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGuest) {
+      onRequireLogin?.();
+      return;
+    }
     onSubmitReport(station.id, {
       stationId: station.id,
       fuelType: selectedFuel,
@@ -96,15 +110,15 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       {/* 1. Interactive Mini Map / Location Context */}
       <div className="relative w-full h-44 rounded-xl overflow-hidden shadow-sm bg-slate-100 mb-4 border border-slate-200">
         {import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
+          <MapErrorBoundary fallbackLabel="Peta detail tidak dapat dimuat karena API key tidak valid. Info stok di bawah tetap bisa dipakai.">
           <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY} libraries={['marker']}>
             <div className="w-full h-full relative">
               <Map
                 defaultCenter={{ lat: station.lat, lng: station.lng }}
                 defaultZoom={15}
-                mapId="DEMO_MAP_ID"
+                mapId={import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'}
                 gestureHandling="greedy"
                 disableDefaultUI={true}
-                internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
                 style={{ width: '100%', height: '100%' }}
               >
                 <AdvancedMarker position={{ lat: station.lat, lng: station.lng }}>
@@ -115,6 +129,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </Map>
             </div>
           </APIProvider>
+          </MapErrorBoundary>
         ) : (
           <div
             className="w-full h-full bg-cover bg-center"
@@ -415,7 +430,18 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       )}
 
       {/* Fixed Bottom Action Bar */}
-      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md px-4 py-3 border-t border-slate-200 z-40 max-w-[480px] mx-auto flex items-center gap-2.5 shadow-lg pb-safe">
+      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md px-4 py-3 border-t border-slate-200 z-40 max-w-[480px] mx-auto flex flex-col gap-2 shadow-lg pb-safe">
+        {isGuest && (
+          <button
+            onClick={onRequireLogin}
+            type="button"
+            className="w-full h-9 rounded-lg bg-sky-50 border border-sky-200 text-[#006194] text-xs font-bold flex items-center justify-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px]">login</span>
+            <span>Masuk untuk lapor stok & verifikasi info</span>
+          </button>
+        )}
+        <div className="flex items-center gap-2.5">
         <button
           onClick={handleOpenGoogleMaps}
           className="flex-1 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#006194] text-xs font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-98 border border-slate-200"
@@ -426,13 +452,14 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         </button>
 
         <button
-          onClick={() => setIsSheetOpen(true)}
+          onClick={() => (isGuest ? onRequireLogin?.() : setIsSheetOpen(true))}
           className="flex-[1.4] h-11 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-98"
           type="button"
         >
           <span className="material-symbols-outlined text-[19px]">campaign</span>
           <span>Kasih Info BBM</span>
         </button>
+        </div>
       </div>
 
       {/* Bottom Sheet Modal for Community Reporting */}

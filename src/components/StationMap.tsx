@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { GasStation } from '../types';
+import { MapErrorBoundary } from './MapErrorBoundary';
 
 interface StationMapProps {
   stations: GasStation[];
@@ -76,19 +77,21 @@ export const StationMap: React.FC<StationMapProps> = ({
   userCoords = [-6.2415, 106.8480], // Default Duren Tiga / Pancoran
 }) => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  // Map ID custom via env, fallback ke DEMO_MAP_ID bawaan Google untuk dev.
+  const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
 
   return (
     <div className="relative w-full h-64 rounded-xl overflow-hidden shadow-sm border border-slate-200 bg-slate-100">
       {apiKey ? (
-        <APIProvider apiKey={apiKey} libraries={['marker', 'places']}>
-          <div className="w-full h-full relative">
+        <MapErrorBoundary>
+        <APIProvider apiKey={apiKey} libraries={['marker']}>
+          <div className="w-full h-full relative" key="gmap-stable">
             <Map
               defaultCenter={{ lat: userCoords[0], lng: userCoords[1] }}
               defaultZoom={14}
-              mapId="DEMO_MAP_ID"
+              mapId={mapId}
               gestureHandling="greedy"
               disableDefaultUI={true}
-              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
               style={{ width: '100%', height: '100%' }}
             >
               {/* User Location Pulse Marker */}
@@ -161,6 +164,7 @@ export const StationMap: React.FC<StationMapProps> = ({
             </Map>
           </div>
         </APIProvider>
+        </MapErrorBoundary>
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-slate-50">
           <span className="material-symbols-outlined text-[36px] text-slate-400 mb-1">map</span>
