@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Vehicle, FuelLog, GasStation } from '../types';
 import { VehicleIcon } from '../components/VehicleIcon';
 import { BrandAvatar } from '../components/BrandAvatar';
@@ -9,7 +9,7 @@ import { formatKm, formatRupiah, toDatetimeLocalValue, parseDateTimeInput, forma
 import { NON_TUNAI_OPTIONS, normalizePaymentMethod, PaymentCategory } from '../utils/payment';
 import {
   prepareReceiptImage,
-  scanReceiptImage,
+  scanReceipt,
   isReceiptAiConfigured,
   ReceiptScanError,
 } from '../services/receiptAi';
@@ -64,8 +64,21 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [showOdoWarningModal, setShowOdoWarningModal] = useState(false);
-  /** Scan AI aktif hanya bila key Gemini dibake saat build — user tidak pernah setting ini. */
-  const receiptAiReady = isReceiptAiConfigured();
+  /** Jalur scan: server (key rahasia) / direct (hosting statis + key VITE_) / off. */
+  const [scanBackend, setScanBackend] = useState<'unknown' | 'server' | 'direct' | 'off'>('unknown');
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/health')
+      .then((r) => {
+        if (alive) setScanBackend(r.ok ? 'server' : isReceiptAiConfigured() ? 'direct' : 'off');
+      })
+      .catch(() => {
+        if (alive) setScanBackend(isReceiptAiConfigured() ? 'direct' : 'off');
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -163,10 +176,17 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       setReceiptPreview(preview);
 
       const img = await prepareReceiptImage(file);
-      const d = await scanReceiptImage(img.base64, img.mimeType);
+      // Server dulu (key rahasia di BE), fallback direct hanya di hosting statis.
+      const { result: d } = await scanReceipt(img.base64, img.mimeType);
 
       if (d.stationName) setStationName(d.stationName);
-      const brand = (d.stationBrand ?? '').trim();
+      // Server bisa jawab 'Other (Toko Madura)' — normalkan ke brand resmi.
+      const rawBrand = (d.stationBrand ?? '').trim();
+      const brand = /madura/i.test(rawBrand)
+        ? 'Toko Madura'
+        : /^other/i.test(rawBrand)
+          ? 'Lainnya'
+          : rawBrand;
       if (['Pertamina', 'Shell', 'Vivo', 'BP', 'Toko Madura', 'Lainnya'].includes(brand)) {
         setStationBrand(brand as typeof stationBrand);
       }
@@ -430,10 +450,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                       Struk terbaca akurat{' '}
                       <span className="text-teal-300 font-bold">({scanConfidence}%)</span>
                     </>
-                  ) : receiptAiReady ? (
-                    'Upload struk untuk scan AI, atau pakai contoh / isi manual'
-                  ) : (
+                  ) : scanBackend === 'off' ? (
                     'Scan AI belum aktif — pakai contoh struk atau isi manual'
+                  ) : (
+                    'Upload struk untuk scan AI, atau pakai contoh / isi manual'
                   )}
                 </p>
               </div>

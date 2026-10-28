@@ -30,8 +30,8 @@ if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
 }
 
 // Receipt OCR API using Gemini Multimodal
-// Model bisa dioverride via env GEMINI_MODEL (default: gemini-2.0-flash)
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+// Model bisa dioverride via env GEMINI_MODEL (default: gemini-3.8-flash)
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 app.post('/api/scan-receipt', async (req, res) => {
   try {

@@ -29,6 +29,16 @@ export function isReceiptAiConfigured(): boolean {
   return Boolean(import.meta.env.VITE_GEMINI_API_KEY);
 }
 
+/** Cek server backend sendiri (same-origin) — tanpa ini berarti hosting statis. */
+async function isServerBackendAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/health', { method: 'GET' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Kecilkan foto struk HP (umumnya 3–12 MP) jadi max 1600px JPEG.
  * Lebih cepat diupload, lebih murah, dan cukup jelas untuk dibaca AI.
@@ -86,7 +96,7 @@ export async function scanReceiptImage(
   if (!apiKey) {
     // Pesan ramah-user; instruksi dev hanya masuk console + .env.example.
     console.warn(
-      '[Gemini] VITE_GEMINI_API_KEY kosong — scan AI nonaktif. ' +
+      '[Gemini] Direct fallback butuh VITE_GEMINI_API_KEY (hosting statis tanpa backend). ' +
         'Dev: isi di .env lalu restart vite (lihat .env.example).'
     );
     throw new ReceiptScanError(
@@ -130,4 +140,65 @@ export async function scanReceiptImage(
     );
   }
   return parsed;
+}
+
+/**
+ * Jalur UTAMA: scan via backend sendiri (POST /api/scan-receipt).
+ * Key Gemini aman di server — FE tidak pegang key sama sekali.
+ */
+export async function scanViaServer(base64: string, mimeType: string): Promise<ReceiptScanResult> {
+  let res: Response;
+  try {
+    res = await fetch('/api/scan-receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mimeType }),
+    });
+  } catch {
+    throw new ReceiptScanError('AI_ERROR', 'Tidak bisa menghubungi server. Coba lagi.');
+  }
+
+  let body: {
+    success?: boolean;
+    data?: ReceiptScanResult | null;
+    error?: string;
+  };
+  try {
+    body = await res.json();
+  } catch {
+    throw new ReceiptScanError('AI_ERROR', 'Server mengembalikan jawaban aneh. Coba lagi.');
+  }
+
+  if (!res.ok || !body.success || !body.data) {
+    // 503 = key server belum dipasang → pemanggil boleh coba fallback direct.
+    throw new ReceiptScanError(
+      res.status === 503 ? 'NO_KEY' : 'AI_ERROR',
+      body.error || 'Scan AI gagal. Silakan isi manual atau pakai contoh struk.'
+    );
+  }
+  if ((body.data.confidence ?? 0) <= 0) {
+    throw new ReceiptScanError(
+      'NO_DATA',
+      'Foto ini sepertinya bukan struk SPBU. Pastikan struk terlihat jelas lalu coba lagi.'
+    );
+  }
+  return body.data;
+}
+
+/**
+ * Orkestrasi: server dulu (key rahasia), fallback direct-Gemini hanya bila
+ * server tidak ada (hosting statis) dan key VITE_ dipasang.
+ */
+export async function scanReceipt(
+  base64: string,
+  mimeType: string
+): Promise<{ result: ReceiptScanResult; source: 'server' | 'direct' }> {
+  const serverAlive = await isServerBackendAvailable();
+  if (serverAlive) {
+    const result = await scanViaServer(base64, mimeType);
+    return { result, source: 'server' };
+  }
+  // Hosting statis tanpa backend — fallback direct bila key VITE_ ada.
+  const result = await scanReceiptImage(base64, mimeType);
+  return { result, source: 'direct' };
 }
