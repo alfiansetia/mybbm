@@ -1,95 +1,65 @@
-# mybbm — Catat Konsumsi & Cek Stok SPBU Real-Time
+# myBBM — Community-Powered Fuel Finder with AI Receipt Scanning
 
-Aplikasi mobile-first untuk mencatat pemakaian BBM kendaraan, menganalisis efisiensi,
-dan memantau stok + antrean SPBU secara crowdsourced di Indonesia.
+- **Tagline:** Live fuel-stock map crowdsourced + AI receipt scan for Indonesian drivers.
+- **Live URL:** https://mybbm-773235037448.asia-southeast2.run.app
+- **Landing Page URL:** [TODO — isi link landing page checkpoint]
+- **Repository:** https://github.com/alfiansetia/mybbm
+- **Short Demo Video (<= 3 min):** [TODO]
+- **Technical Deep-Dive Video (<= 15 min):** [TODO]
+- **Presentation Deck:** [TODO — link PDF / Slides]
 
-> Wajib login (Google). Data kendaraan, log pengisian, dan profil murni milik
-> akun masing-masing. Data SPBU adalah data publik bersama.
+## 1. Problem Statement
 
-## Fitur
+Indonesia has no public real-time fuel-availability API — not from operators, not from map providers. Drivers queue 20 minutes only to learn Pertalite just ran out. Station locations exist on maps, but live stock/queue status does not. myBBM builds this missing data layer bottom-up: station base from public map data, live status from the community, made effortless by AI receipt scanning and kept honest by a trust-weighted reputation system.
 
-| Tab | Isi |
+Target audience: 100M+ Indonesian motorists (priority: daily commuters & ojek/logistics drivers in Jabodetabek), fleet SMEs (5–50 vehicles), and later data consumers (logistics, map aggregators, station operators).
+
+## 2. Solution & Core Features
+
+| Area | MVP |
 | --- | --- |
-| Beranda | Ringkasan kendaraan aktif, pengeluaran bulan berjalan, radar SPBU terdekat |
-| Cek BBM | Daftar SPBU + status stok/antrean, lapor kondisi, vote laporan orang lain |
-| Catat (FAB) | Scan struk AI (Gemini) atau input manual + hitung km/L otomatis |
-| Statistik | Tren 6 bulan, komposisi brand/BBM, insight SPBU terhemat, jadwal oli, export CSV |
-| Akun | Profil + reputasi, kelola kendaraan, reset data milik sendiri |
+| Live map | Nearby SPBU (Pertamina, Shell, BP, Vivo) with community stock/queue status stamped "x minutes ago"; no report = honest "no data yet" |
+| AI scan (FAB Catat) | Photo of receipt → auto-fill fuel log (station, fuel, liters, price/L, total, payment) via Gemini vision; every scan doubles as fresh stock report |
+| Personal analytics | Consumption km/L, 6-month trends, cash vs cashless breakdown, service reminders, CSV export |
+| Trust system | Reporter reputation from peer votes, reports start at 0 votes, cooldown + score penalties for spam, weighted consensus (recency × trust × votes) |
+| Offline baseline | `localStorage` cache, realtime Firestore sync when online; PWA installable |
 
-Hal penting:
+## 3. Architecture & Tech Stack
 
-- **Scan struk jujur** — kalau AI tidak tersedia/gagal, backend return error eksplisit
-  (tidak mengarang data). Lihat `docs/API.md`.
-- **Reputasi crowdsource** — lapor stok menambah poin, vote memengaruhi skor reporter.
-- **Offline baseline** — cache `localStorage`, sinkron realtime Firestore saat online.
+- **Frontend / Client:** React 19 + Vite 8 + Tailwind 4 SPA (`src/`), Recharts, Leaflet + Google Maps; PWA (`manifest` + Workbox).
+- **Backend / Microservices:** Express (`server.ts`) serves `dist/` + JSON API (`POST /api/scan-receipt`, `GET /api/health`); same codebase runs locally, in Docker, on Cloud Run.
+- **Data:** Firebase Auth (Google) + Firestore. User data (vehicles, logs, profiles) strictly owner-scoped; `stations` public-read, write only when logged in. Map discoveries cached create-only, never overwriting community data.
+- **AI / LLM Integration:** Gemini vision (`gemini-3.8-flash`, `GEMINI_MODEL` overridable) behind server-side `/api/scan-receipt` — API key never ships to client. Client downscales photos to 1600px (cheaper+faster), model prompted strict-JSON-only with temperature 0 and `null`-instead-of-guessing; non-receipt photos (confidence 0) rejected. Numbers clamped against registered tank capacity; payment text normalized to Cash vs Cashless.
+- **Security & Guardrails:** Firestore default-deny rules + server-enforced report cooldown; token optimization (1600px downscale, temp 0, strict JSON, no chat history); PII: receipts contain no owner identity, user data never leaves owner scope, `.env` gitignored + `.dockerignore`d; `GEMINI_API_KEY` runtime-only (Secret Manager recommended for serious prod).
+- **Deployment & Ops:** Google Cloud Run (`asia-southeast2`, scale-to-zero) via `cloudbuild.yaml` (bake `VITE_*` as `--build-arg`, set `GEMINI_*` as runtime vars). Trigger `mybbm-with-env` (manual). See `DEPLOY.md`.
 
-## Tech stack
-
-React 19 + Vite 8 + Tailwind 4, Firebase (Auth Google + Firestore),
-Express (`server.ts` sekaligus menyajikan API + dev server Vite / file `dist`),
-Gemini AI untuk OCR struk, Recharts untuk grafik, Leaflet + Google Maps untuk peta.
-
-## Mulai cepat (lokal)
+## 4. Local Setup & Reproduction Steps
 
 ```bash
-cp .env.example .env        # lalu isi GEMINI_API_KEY bila ingin coba scan AI
-npm install --legacy-peer-deps
-npm run dev                 # http://localhost:3000
-```
+# Clone the repo
+git clone https://github.com/alfiansetia/mybbm.git
+cd mybbm
 
-> `npm install` biasa gagal karena konflik peer `vite@8` vs `esbuild` —
-> pakai `--legacy-peer-deps`.
+# Setup environment variables
+cp .env.example .env   # isi VITE_FIREBASE_*, VITE_GOOGLE_MAPS/PLACES_API_KEY, GEMINI_API_KEY
+
+# Run locally (butuh --legacy-peer-deps karena vite@8 vs esbuild peer conflict)
+npm install --legacy-peer-deps
+npm run dev            # http://localhost:3000
+```
 
 | Variabel | Wajib | Keterangan |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Opsional | Tanpa ini, scan struk return 503 jujur + isi manual |
-| `GEMINI_MODEL` | Opsional | Default `gemini-2.0-flash` |
-| `VITE_GOOGLE_MAPS_API_KEY` | Opsional | Tanpa ini peta Google abu-abu (Leaflet tetap jalan) |
-| `PORT` | Opsional | Default `3000` |
+| `GEMINI_API_KEY` | Opsional | Tanpa ini scan return 503 jujur + isi manual |
+| `GEMINI_MODEL` | Opsional | Default `gemini-3.8-flash` |
+| `VITE_FIREBASE_*` | Wajib utk login/data | Dari Firebase Console → Project settings |
+| `VITE_GOOGLE_MAPS_API_KEY` / `VITE_GOOGLE_PLACES_API_KEY` | Opsional | Tanpa ini peta fallback Leaflet/OSM |
+| `PORT` | Opsional | Default `3000` (Cloud Run inject `8080` otomatis) |
 
-## Skrip
+Skrip: `npm run dev` (Express+Vite), `npm run build` (ke `dist/`), `npm run start` (serve prod), `npm run lint` (`tsc --noEmit`).
 
-| Perintah | Fungsi |
-| --- | --- |
-| `npm run dev` | Express + Vite dev (`tsx server.ts`) |
-| `npm run build` | Build frontend ke `dist/` |
-| `npm run start` | Serve `dist/` + API (produksi) |
-| `npm run preview` | Preview Vite |
-| `npm run lint` | `tsc --noEmit` |
+Deploy produksi: ikut `DEPLOY.md` (Cloud Build trigger + substitutions) atau satu perintah Cloud Shell — lihat `docs/PENGEMBANGAN.md`.
 
-## Struktur proyek
+## Docs
 
-```
-server.ts                 # API + serve frontend
-firestore.rules           # Security rules (default-deny)
-src/
-  App.tsx                 # Auth gate, sync Firestore, routing tab
-  views/                  # Beranda, CekSpbu, CatatBbm, DetailSpbu, Statistik, Akun
-  components/             # TopHeader, BottomNav, StationMap, ...
-  services/dbService.ts   # Langganan + tulis Firestore
-  lib/firebase.ts         # Init Firebase Auth/Firestore
-  data/seedData.ts        # Seed bootstrap SPBU (publik) — bukan data user
-  utils/                  # reputation.ts, serviceTracker.ts
-docs/
-  ARSITEKTUR.md           # Alur app & modul
-  FIRESTORE.md            # Koleksi, rules, seed
-  API.md                  # Kontrak endpoint backend
-  PENGEMBANGAN.md         # Setup, konvensi, deploy
-```
-
-## Dokumentasi
-
-- `docs/ARSITEKTUR.md` — cara kerja auth gate, sinkronisasi, dan modul
-- `docs/FIRESTORE.md` — skema koleksi + security rules
-- `docs/API.md` — `POST /api/scan-receipt`, `GET /api/health`
-- `docs/PENGEMBANGAN.md` — setup lokal, deploy, troubleshooting
-
-## Keamanan (ringkas)
-
-- Firestore default-deny; kendaraan/log/profil hanya milik `request.auth.uid`.
-- Koleksi `stations` bisa dibaca publik, tulis hanya saat login.
-- Jangan commit `.env` (sudah di-`.gitignore`).
-
-## Lisensi
-
-Apache-2.0 (lihat header `src/App.tsx`).
+- `docs/ARSITEKTUR.md`, `docs/FIRESTORE.md`, `docs/API.md`, `docs/PENGEMBANGAN.md`, `DEPLOY.md`, `SUBMISSION.md`
