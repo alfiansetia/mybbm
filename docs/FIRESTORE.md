@@ -1,7 +1,7 @@
 # Firestore mybbm
 
-Database: ID kustom `ai-studio-mybbmcatatkonsum-...` (lihat
-`firebase-applet-config.json`, dipakai di `src/lib/firebase.ts`).
+Database: ID kustom (lihat `firebase-applet-config.example.json`,
+diisi dari Firebase Console; dipakai di `src/lib/firebase.ts`).
 
 ## Koleksi
 

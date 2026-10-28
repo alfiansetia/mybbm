@@ -12,13 +12,30 @@ import {
   doc,
   getDocFromServer,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseFileConfig from '../../firebase-applet-config.json';
+
+// Config: env (.env, tidak di-commit) diprioritaskan, fallback ke
+// firebase-applet-config.json (di-gitignore; di-inject otomatis oleh AI Studio).
+// Fresh clone: copy firebase-applet-config.example.json jadi
+// firebase-applet-config.json, atau isi VITE_FIREBASE_* di .env.
+const env = import.meta.env;
+const firebaseConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseFileConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseFileConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseFileConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseFileConfig.storageBucket,
+  messagingSenderId:
+    env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseFileConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseFileConfig.appId,
+};
+const firestoreDatabaseId =
+  env.VITE_FIRESTORE_DATABASE_ID || firebaseFileConfig.firestoreDatabaseId;
 
 // Initialize Firebase App
 export const app = initializeApp(firebaseConfig);
 
 // CRITICAL: The app will break without specifying the firestoreDatabaseId
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app, firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
