@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
-import { GasStation, CommunityReport, UserProfile } from '../types';
+import { GasStation, CommunityReport, UserProfile, SubmitReportResult } from '../types';
 import { MapErrorBoundary } from '../components/MapErrorBoundary';
 import { ReputationBadge } from '../components/ReputationBadge';
 import { StatusPill } from '../components/StatusPill';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { formatRupiah } from '../utils/format';
+import { computeAggregatedStatus, reportCooldownLeftMs, formatCooldown } from '../utils/reputation';
 
 interface DetailSpbuViewProps {
   station: GasStation;
@@ -13,7 +14,7 @@ interface DetailSpbuViewProps {
   isGuest?: boolean;
   onRequireLogin?: () => void;
   onBack: () => void;
-  onSubmitReport: (stationId: string, newReport: Omit<CommunityReport, 'id' | 'timestamp'>) => void;
+  onSubmitReport: (stationId: string, newReport: Omit<CommunityReport, 'id' | 'timestamp'>) => Promise<SubmitReportResult>;
   onVoteReport: (stationId: string, reportId: string, voteType: 'up' | 'down') => void;
 }
 
@@ -34,8 +35,24 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
 
+  // Cooldown anti-spam: detik berjalan selama sheet terbuka.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isSheetOpen) return;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isSheetOpen]);
+  const cooldownLeftMs = isGuest ? 0 : reportCooldownLeftMs(userProfile.cooldownUntilMs, nowTick);
+
   // Active top community report
   const primaryReport = station.reports.length > 0 ? station.reports[0] : null;
+
+  // Konsensus komunitas (PRD BR-2): bobot recency × trust pelapor × vote.
+  // Inilah tempat reputasi pelapor benar-benar ngaruh ke status tampil.
+  const consensus = useMemo(
+    () => computeAggregatedStatus(station.reports),
+    [station.reports]
+  );
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -59,13 +76,17 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isGuest) {
       onRequireLogin?.();
       return;
     }
-    onSubmitReport(station.id, {
+    if (cooldownLeftMs > 0) {
+      showToast(`Sabar — tunggu ${formatCooldown(cooldownLeftMs)} sebelum melapor lagi.`);
+      return;
+    }
+    const res = await onSubmitReport(station.id, {
       stationId: station.id,
       fuelType: selectedFuel,
       status: selectedStatus,
@@ -76,14 +97,26 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       reporterTrustScore: userProfile.credibilityScore,
       isVerifiedReporter: userProfile.isVerified,
       minutesAgo: 1,
-      upvotes: 1,
+      // Mulai 0 vote — self-upvote otomatis adalah phantom vote (rule App).
+      upvotes: 0,
       downvotes: 0,
-      userVoted: 'up',
     });
+    if (!res.accepted) {
+      showToast(
+        res.retryInMs > 0
+          ? `Sabar — tunggu ${formatCooldown(res.retryInMs)} sebelum melapor lagi.`
+          : 'Laporan ditolak. Coba lagi.'
+      );
+      return;
+    }
 
     setIsSheetOpen(false);
     setReportNote('');
-    showToast('Laporan berhasil dikirim! Reputasi Anda bertambah +15 poin.');
+    showToast(
+      res.penalized
+        ? 'Terkirim, tapi info terakhirmu di sini ditolak komunitas (−0,3 skor, jeda 15 mnt). Pastikan lihat langsung.'
+        : 'Laporan berhasil dikirim! Reputasi Anda bertambah +15 poin.'
+    );
   };
 
   const handleOpenGoogleMaps = () => {
@@ -347,6 +380,18 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       {/* 5. Live Community Note & Reputation Verification Card */}
       {primaryReport && (
         <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm mb-4">
+          {/* Konsensus komunitas: status agregat berbobot */}
+          {station.reports.length > 0 && (
+            <div className="flex items-center justify-between bg-slate-900 text-white rounded-lg px-3 py-2 mb-2.5">
+              <span className="text-[11px] font-bold flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[15px] text-teal-300">groups</span>
+                Konsensus: {consensus.dominantStatus}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-300 tabular-nums">
+                {consensus.summaryText} • yakin {consensus.confidence}%
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="shrink-0 ring-2 ring-[#006194]/20 rounded-full">
@@ -631,13 +676,24 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
                 </p>
               </div>
 
-              {/* Submit Button */}
+              {/* Submit Button — dikunci selama cooldown */}
               <button
                 type="submit"
-                className="w-full h-11 bg-[#006194] hover:bg-[#007bb9] text-white rounded-lg text-xs font-bold shadow-md active:scale-98 transition-all flex items-center justify-center gap-2"
+                disabled={cooldownLeftMs > 0}
+                className={`w-full h-11 rounded-lg text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 ${
+                  cooldownLeftMs > 0
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                    : 'bg-[#006194] hover:bg-[#007bb9] text-white active:scale-98'
+                }`}
               >
-                <span className="material-symbols-outlined text-[18px]">send</span>
-                <span>Kirim Laporan Komunitas</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  {cooldownLeftMs > 0 ? 'timer' : 'send'}
+                </span>
+                <span>
+                  {cooldownLeftMs > 0
+                    ? `Tunggu ${formatCooldown(cooldownLeftMs)} sebelum melapor`
+                    : 'Kirim Laporan Komunitas'}
+                </span>
               </button>
             </form>
           </div>

@@ -6,7 +6,7 @@ import { VehicleIcon } from '../components/VehicleIcon';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Toast';
 import { ProfileAvatar } from '../components/ProfileAvatar';
-import { formatKm } from '../utils/format';
+import { formatKm, formatRibuan, parseRupiahInput } from '../utils/format';
 
 interface AkunViewProps {
   userProfile: UserProfile;
@@ -258,7 +258,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
             info
           </span>
           <p className="text-[11px] leading-relaxed">
-            <strong>Cara Kerja Reputasi:</strong> Setiap laporan yang diverifikasi benar (👍) oleh motorist lain akan meningkatkan Skor Kredibilitasmu. Laporan dari pelapor bereputasi tinggi memiliki bobot lebih besar dalam menentukan status live SPBU!
+            <strong>Cara Kerja Reputasi:</strong> Setiap laporan yang diverifikasi benar (👍) oleh motorist lain akan meningkatkan Skor Kredibilitasmu. Laporan dari pelapor bereputasi tinggi memiliki bobot lebih besar dalam menentukan status live SPBU! Jeda 3 menit antar laporan; info yang ditolak komunitas (👎≤−3) kena penalti −0,3 skor + jeda 15 menit.
           </p>
         </div>
       </div>
@@ -301,18 +301,30 @@ export const AkunView: React.FC<AkunViewProps> = ({
                   >
                     <VehicleIcon type={v.type} className="text-[18px]" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-slate-900 truncate">{v.name}</p>
                       {isActive && (
-                        <span className="bg-[#006194] text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+                        <span className="bg-[#006194] text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full shrink-0">
                           Aktif
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-500">
-                      {v.plateNumber} • Odo: {formatKm(v.currentOdo)} • Tangki {tankOrDefault(v)} L • {v.averageKmL} km/L
-                    </p>
+                    <p className="text-[10px] text-slate-500">{v.plateNumber}</p>
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 bg-sky-100 border border-sky-200 text-[#004b73] text-[10px] font-extrabold px-2 py-0.5 rounded-full tabular-nums">
+                        <span className="material-symbols-outlined text-[13px]">speed</span>
+                        {formatKm(v.currentOdo)}
+                      </span>
+                      <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums">
+                        <span className="material-symbols-outlined text-[13px]">local_gas_station</span>
+                        {tankOrDefault(v)} L
+                      </span>
+                      <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full tabular-nums">
+                        <span className="material-symbols-outlined text-[13px]">eco</span>
+                        {v.averageKmL} km/L
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -538,9 +550,11 @@ export const AkunView: React.FC<AkunViewProps> = ({
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Odometer Awal (km)</label>
                   <input
-                    type="number"
-                    value={newVehOdo}
-                    onChange={(e) => setNewVehOdo(Number(e.target.value))}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={formatRibuan(newVehOdo)}
+                    onChange={(e) => setNewVehOdo(parseRupiahInput(e.target.value))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#006194]"
                   />
                 </div>

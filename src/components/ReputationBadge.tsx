@@ -1,9 +1,7 @@
 import React from 'react';
-
-export type MedalTier = 'gold' | 'silver' | 'bronze';
+import { getReputationTier } from '../utils/reputation';
 
 export interface MedalConfig {
-  tier: MedalTier;
   label: string;
   badgeBg: string;
   textColor: string;
@@ -12,37 +10,16 @@ export interface MedalConfig {
   iconName: string;
 }
 
+/** Badge selalu cermin tabel REPUTATION_TIERS — tidak ada ambang sendiri. */
 export function getMedalConfig(score: number): MedalConfig {
-  if (score >= 4.8) {
-    return {
-      tier: 'gold',
-      label: 'Gold',
-      badgeBg: 'bg-gradient-to-r from-amber-500/15 via-yellow-400/20 to-amber-500/10',
-      textColor: 'text-amber-900',
-      borderColor: 'border-amber-400/80',
-      iconColor: 'text-amber-600',
-      iconName: 'military_tech',
-    };
-  }
-  if (score >= 4.2) {
-    return {
-      tier: 'silver',
-      label: 'Silver',
-      badgeBg: 'bg-gradient-to-r from-slate-200/80 via-slate-100 to-slate-200/50',
-      textColor: 'text-slate-800',
-      borderColor: 'border-slate-300',
-      iconColor: 'text-slate-600',
-      iconName: 'workspace_premium',
-    };
-  }
+  const tier = getReputationTier(score);
   return {
-    tier: 'bronze',
-    label: 'Bronze',
-    badgeBg: 'bg-gradient-to-r from-orange-200/40 via-amber-100/60 to-orange-200/30',
-    textColor: 'text-amber-950',
-    borderColor: 'border-amber-600/40',
-    iconColor: 'text-amber-700',
-    iconName: 'shield',
+    label: tier.label,
+    badgeBg: tier.badgeBg,
+    textColor: tier.textColor,
+    borderColor: tier.borderColor,
+    iconColor: tier.iconColor,
+    iconName: tier.icon,
   };
 }
 

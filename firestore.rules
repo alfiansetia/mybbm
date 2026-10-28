@@ -25,10 +25,18 @@ service cloud.firestore {
     }
 
     // User Profile
+    // Cooldown anti-spam laporan ditegakkan di server: totalReports hanya boleh
+    // naik bila cooldownUntilMs sudah lewat. Update profil lain (kendaraan aktif,
+    // dsb.) tetap bebas. Legacy doc tanpa cooldownUntilMs dianggap boleh sekali.
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if isSignedIn() && resource.data.id == request.auth.uid;
-      allow create, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && (
+        request.resource.data.totalReports == resource.data.totalReports ||
+        (!('cooldownUntilMs' in resource.data) ||
+          request.time.toMillis() > resource.data.cooldownUntilMs)
+      );
       allow delete: if false;
     }
 

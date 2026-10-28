@@ -7,6 +7,12 @@ import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
 import { StationPickerSheet } from '../components/StationPickerSheet';
 import { formatKm, formatRupiah, toDatetimeLocalValue, parseDateTimeInput, formatDisplayDate, formatDisplayDateTime, formatRibuan, parseRupiahInput, parseLiterInput } from '../utils/format';
 import { NON_TUNAI_OPTIONS, normalizePaymentMethod, PaymentCategory } from '../utils/payment';
+import {
+  prepareReceiptImage,
+  scanReceiptImage,
+  isReceiptAiConfigured,
+  ReceiptScanError,
+} from '../services/receiptAi';
 
 interface CatatBbmViewProps {
   activeVehicle: Vehicle;
@@ -58,6 +64,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [showOdoWarningModal, setShowOdoWarningModal] = useState(false);
+  /** Scan AI aktif hanya bila key Gemini dibake saat build — user tidak pernah setting ini. */
+  const receiptAiReady = isReceiptAiConfigured();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,61 +145,60 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     }, 600);
   };
 
-  // Upload custom receipt file and send to backend
+  // Upload foto struk → baca langsung via Gemini (tanpa backend).
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64Data = reader.result as string;
-      setReceiptPreview(base64Data);
-      setIsScanning(true);
-      setScanError(null);
+    setIsScanning(true);
+    setScanError(null);
+    try {
+      const reader = new FileReader();
+      const preview: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('read'));
+        reader.readAsDataURL(file);
+      });
+      setReceiptPreview(preview);
 
-      try {
-        const response = await fetch('/api/scan-receipt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageBase64: base64Data,
-            mimeType: file.type || 'image/jpeg',
-          }),
-        });
+      const img = await prepareReceiptImage(file);
+      const d = await scanReceiptImage(img.base64, img.mimeType);
 
-        const resData = await response.json();
-        if (resData.success && resData.data && !resData.isFallback) {
-          const d = resData.data;
-          if (d.stationName) setStationName(d.stationName);
-          if (d.stationBrand) setStationBrand(d.stationBrand);
-          if (d.fuelType) setFuelType(d.fuelType);
-          if (d.liters != null) setLiters(Number(d.liters));
-          if (d.pricePerLiter != null) setPricePerLiter(Number(d.pricePerLiter));
-          if (d.totalAmount != null) setTotalAmount(Number(d.totalAmount));
-          if (d.paymentMethod) applyPayment(d.paymentMethod);
-          if (d.confidence != null) setScanConfidence(Number(d.confidence));
-          else setScanConfidence(null);
-          if (d.dateTime) {
-            const parsed = parseDateTimeInput(d.dateTime);
-            if (parsed) setDateInput(toDatetimeLocalValue(parsed));
-          }
-          setScanError(null);
-        } else {
-          // Backend jujur: AI tidak tersedia / gagal — jangan isi data palsu.
-          setScanConfidence(null);
-          setScanError(
-            resData.error || 'Scan AI gagal. Silakan isi manual atau pakai contoh struk.'
-          );
-        }
-      } catch (err) {
-        console.warn('Scan request error:', err);
-        setScanConfidence(null);
-        setScanError('Koneksi scan gagal. Silakan isi manual.');
-      } finally {
-        setIsScanning(false);
+      if (d.stationName) setStationName(d.stationName);
+      const brand = (d.stationBrand ?? '').trim();
+      if (['Pertamina', 'Shell', 'Vivo', 'BP', 'Toko Madura', 'Lainnya'].includes(brand)) {
+        setStationBrand(brand as typeof stationBrand);
       }
-    };
-    reader.readAsDataURL(file);
+      if (d.fuelType) setFuelType(d.fuelType);
+      // Angka AI ikut aturan kapasitas tangki: liter & total di-clamp, bukan ditolak.
+      if (d.liters != null) {
+        const liters = Math.min(Math.max(0, Number(d.liters) || 0), tankCapacityL);
+        setLiters(Number(liters.toFixed(2)));
+      }
+      if (d.pricePerLiter != null) setPricePerLiter(Math.max(0, Number(d.pricePerLiter) || 0));
+      if (d.totalAmount != null) {
+        const cap = Math.round(tankCapacityL * Math.max(0, Number(d.pricePerLiter) || pricePerLiter));
+        setTotalAmount(Math.min(Math.max(0, Number(d.totalAmount) || 0), cap));
+      }
+      if (d.paymentMethod) applyPayment(d.paymentMethod);
+      setScanConfidence(d.confidence != null ? Math.round(Number(d.confidence)) : null);
+      if (d.dateTime) {
+        const parsed = parseDateTimeInput(d.dateTime);
+        if (parsed) setDateInput(toDatetimeLocalValue(parsed));
+      }
+      setScanError(null);
+    } catch (err) {
+      console.warn('Scan receipt error:', err);
+      setScanConfidence(null);
+      setScanError(
+        err instanceof ReceiptScanError
+          ? err.message
+          : 'Scan AI gagal. Silakan isi manual atau pakai contoh struk.'
+      );
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const handleSave = (bypassOdoCheck = false) => {
@@ -356,7 +363,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
             {/* Camera / Scan Controls */}
             <div className="absolute top-2.5 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900/80 text-white backdrop-blur-md text-[10px] font-bold">
               <span className="w-2 h-2 rounded-full bg-[#059669] animate-ping" />
-              <span>{isScanning ? 'MEMINDAI DOKUMEN...' : 'AUTO-DETECT AKTIF'}</span>
+              <span>{isScanning ? 'GEMINI MEMBACA STRUK…' : 'SCAN AI • GEMINI'}</span>
             </div>
 
             <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
@@ -423,8 +430,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                       Struk terbaca akurat{' '}
                       <span className="text-teal-300 font-bold">({scanConfidence}%)</span>
                     </>
-                  ) : (
+                  ) : receiptAiReady ? (
                     'Upload struk untuk scan AI, atau pakai contoh / isi manual'
+                  ) : (
+                    'Scan AI belum aktif — pakai contoh struk atau isi manual'
                   )}
                 </p>
               </div>
@@ -601,9 +610,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
               <span className="text-[10px] text-slate-400 font-bold block mb-0.5">Odo Sebelumnya</span>
               <div className="flex items-baseline gap-1">
                 <input
-                  type="number"
-                  value={previousOdo}
-                  onChange={(e) => setPreviousOdo(Number(e.target.value))}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatRibuan(previousOdo)}
+                  placeholder="0"
+                  onChange={(e) => setPreviousOdo(parseRupiahInput(e.target.value))}
                   className="w-full bg-transparent text-sm font-extrabold text-slate-700 tabular-nums focus:outline-none"
                 />
                 <span className="text-xs text-slate-400">km</span>
@@ -614,9 +625,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
               <span className="text-[10px] text-[#006194] font-bold block mb-0.5">Odo Sekarang</span>
               <div className="flex items-baseline gap-1">
                 <input
-                  type="number"
-                  value={currentOdo}
-                  onChange={(e) => setCurrentOdo(Number(e.target.value))}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatRibuan(currentOdo)}
+                  placeholder="0"
+                  onChange={(e) => setCurrentOdo(parseRupiahInput(e.target.value))}
                   className="w-full bg-transparent text-sm font-extrabold text-[#006194] tabular-nums focus:outline-none"
                 />
                 <span className="text-xs text-[#006194] font-medium">km</span>

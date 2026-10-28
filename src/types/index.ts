@@ -40,6 +40,10 @@ export interface CommunityReport {
   reporterName: string;
   reporterAvatar?: string;
   reporterTrustScore: number;
+  /** UID penulis — untuk anti-spam & atribusi (rules melarang tulis profil orang lain). */
+  reporterUid?: string;
+  /** Snapshot skor pelapor saat melapor — basis hitung-ulang trust saat vote (idempoten). */
+  reporterBaseScore?: number;
   isVerifiedReporter?: boolean;
   timestamp: string;
   minutesAgo: number;
@@ -103,4 +107,13 @@ export interface UserProfile {
   isVerified: boolean;
   activeVehicleId: string;
   totalReports: number;
+  /** Epoch-ms sampai kapan user tidak boleh melapor lagi (anti-spam). */
+  cooldownUntilMs?: number;
+}
+
+/** Hasil submit laporan: diterima / ditolak cooldown / kena penalti penolakan komunitas. */
+export interface SubmitReportResult {
+  accepted: boolean;
+  penalized: boolean;
+  retryInMs: number;
 }

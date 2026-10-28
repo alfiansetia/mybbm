@@ -10,6 +10,7 @@ import {
   FuelLog,
   UserProfile,
   CommunityReport,
+  SubmitReportResult,
 } from './types';
 import { LEGACY_DUMMY_STATION_IDS } from './data/seedData';
 import {
@@ -44,7 +45,7 @@ import { CatatBbmView } from './views/CatatBbmView';
 import { DetailSpbuView } from './views/DetailSpbuView';
 import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
-import { calculateReporterScore } from './utils/reputation';
+import { calculateReporterScore, NEW_USER_SCORE, VERIFIED_SCORE_MIN, REPORT_ACTIVITY_STEP, REPORT_COOLDOWN_MS, PENALIZED_COOLDOWN_MS, REJECTED_NET_MAX, REJECTED_PENALTY, peerNetOf } from './utils/reputation';
 import { useUserLocation } from './hooks/useUserLocation';
 import { fetchMapStations, mergeStationsById } from './services/nearbyStations';
 
@@ -218,19 +219,34 @@ export default function App() {
 
     const unsubProfile = subscribeUserProfile(uid, (profile) => {
       if (profile) {
-        setUserProfile(profile);
+        // Migrasi sekali: profil warisan yang instan-master (0 laporan tapi skor/poin seeded) dinormalkan.
+        if (
+          profile.totalReports === 0 &&
+          (profile.credibilityScore !== NEW_USER_SCORE || profile.reputationPoints !== 0)
+        ) {
+          const normalized = {
+            credibilityScore: NEW_USER_SCORE,
+            reputationPoints: 0,
+            isVerified: false,
+          };
+          console.info('[Reputasi] Profil warisan dinormalkan ke Warga Baru.');
+          saveUserProfileToDb(uid, normalized);
+          setUserProfile({ ...profile, ...normalized });
+        } else {
+          setUserProfile(profile);
+        }
         if (profile.activeVehicleId) {
           setActiveVehicleId(profile.activeVehicleId);
         }
       } else {
-        // First time login: persist default profile ke Firestore
+        // First time login: mulai sebagai Warga Baru — reputasi & verifikasi diperoleh, bukan bawaan.
         const newProfile: UserProfile = {
           name: currentUser.displayName || currentUser.email?.split('@')[0] || 'Pengendara',
           email: currentUser.email || 'pengendara@gmail.com',
           avatar: currentUser.photoURL || '',
-          credibilityScore: 5.0,
-          reputationPoints: 100,
-          isVerified: true,
+          credibilityScore: NEW_USER_SCORE,
+          reputationPoints: 0,
+          isVerified: false,
           activeVehicleId: '',
           totalReports: 0,
         };
@@ -338,19 +354,48 @@ export default function App() {
   };
 
   // Community reporting and write to Firestore (wajib login)
+  // + cooldown anti-spam + penalti bila info sebelumnya ditolak komunitas.
   const handleSubmitReport = async (
     stationId: string,
     newReportData: Omit<CommunityReport, 'id' | 'timestamp'>
-  ) => {
+  ): Promise<SubmitReportResult> => {
     if (!currentUser) {
       await handleGoogleLogin();
-      return;
+      return { accepted: false, penalized: false, retryInMs: 0 };
+    }
+
+    // Guard 1: cooldown — tolak sebelum menulis apa pun.
+    const now = Date.now();
+    const retryInMs = Math.max(0, (userProfile.cooldownUntilMs ?? 0) - now);
+    if (retryInMs > 0) {
+      console.info('[Reputasi] Laporan ditolak: cooldown berjalan.');
+      return { accepted: false, penalized: false, retryInMs };
+    }
+
+    // Guard 2: info saya sebelumnya di SPBU+BBM yang sama ditolak komunitas?
+    // (Spammer yang ngotot posting setelah di-downvote kena penalti + cooldown panjang.)
+    const station = [...stations, ...nearbyStations].find((s) => s.id === stationId);
+    const myPrev = station?.reports.find(
+      (r) =>
+        (r.reporterUid ? r.reporterUid === currentUser.uid : r.reporterName === userProfile.name) &&
+        r.fuelType === newReportData.fuelType
+    );
+    const penalized = !!myPrev && peerNetOf(myPrev.upvotes, myPrev.downvotes) <= REJECTED_NET_MAX;
+    if (penalized) {
+      console.info('[Reputasi] Penalti: info sebelumnya ditolak komunitas (net ≤ -3).');
     }
     const reportId = `rep-${Date.now()}`;
     const newReport: CommunityReport = {
       ...newReportData,
       id: reportId,
       timestamp: new Date().toISOString(),
+      reporterUid: currentUser.uid,
+      reporterBaseScore: userProfile.credibilityScore,
+      // Laporan baru mulai 0 vote — skor naik dari vote ASLI, bukan fiktif.
+      // (Self-upvote otomatis dihapus: itu phantom vote.)
+      upvotes: 0,
+      downvotes: 0,
+      userVoted: undefined,
     };
 
     let targetUpdatedStation: GasStation | null = null;
@@ -385,8 +430,11 @@ export default function App() {
           : updatedFuels;
 
       // Anti-spam rule: replace previous report by same user if within 30 mins
+      // (by UID bila ada — nama bisa kembar; fallback nama untuk laporan warisan)
+      const isMine = (r: { reporterUid?: string; reporterName: string }) =>
+        r.reporterUid ? r.reporterUid === currentUser.uid : r.reporterName === userProfile.name;
       const otherReports = st.reports.filter(
-        (r) => r.reporterName !== userProfile.name || r.fuelType !== newReport.fuelType
+        (r) => !(isMine(r) && r.fuelType === newReport.fuelType)
       );
 
       const updated: GasStation = {
@@ -412,16 +460,21 @@ export default function App() {
       await updateStationInDb(targetUpdatedStation);
     }
 
-    // Boost current user's reputation points and reports count
+    // Reputasi naik dari AKTIVITAS murni (+step per laporan) — tanpa vote fiktif.
+    // Vote peer memengaruhi trust pada laporan itu (bobot agregasi), bukan angka ini,
+    // karena Firestore rules melarang user menulis profil milik orang lain.
+    const newScore = Number(
+      Math.min(
+        5.0,
+        Math.max(1.0, userProfile.credibilityScore + REPORT_ACTIVITY_STEP - (penalized ? REJECTED_PENALTY : 0))
+      ).toFixed(1)
+    );
     const updatedReputation = {
       reputationPoints: userProfile.reputationPoints + 15,
       totalReports: userProfile.totalReports + 1,
-      credibilityScore: calculateReporterScore(
-        userProfile.credibilityScore,
-        5,
-        0,
-        userProfile.totalReports + 1
-      ),
+      credibilityScore: newScore,
+      isVerified: newScore >= VERIFIED_SCORE_MIN,
+      cooldownUntilMs: now + (penalized ? PENALIZED_COOLDOWN_MS : REPORT_COOLDOWN_MS),
     };
 
     setUserProfile((prev) => ({
@@ -432,6 +485,8 @@ export default function App() {
     if (currentUser) {
       await saveUserProfileToDb(currentUser.uid, updatedReputation);
     }
+
+    return { accepted: true, penalized, retryInMs: 0 };
   };
 
   // Peer verification: vote thumbs up or thumbs down (wajib login)
@@ -445,6 +500,7 @@ export default function App() {
       return;
     }
     let targetUpdatedStation: GasStation | null = null;
+    let verifiedDelta = 0;
 
     targetUpdatedStation = updateStationEverywhere(stationId, (st) => {
       const updatedReports = st.reports.map((rep) => {
@@ -475,12 +531,15 @@ export default function App() {
           }
         }
 
-        // Recalculate reporter trust score
-        const updatedTrust = calculateReporterScore(
-          rep.reporterTrustScore,
-          newUp,
-          newDown
-        );
+        // verifiedCount mengikuti transisi: cabut upvote / pindah ke downvote = -1.
+        if (voteType === 'up') verifiedDelta = alreadyUp ? -1 : 1;
+        else if (alreadyUp) verifiedDelta = -1;
+
+        // Hitung-ulang dari BASIS TETAP (snapshot saat melapor) — idempoten:
+        // vote sama → skor sama; vote dicabut → skor kembali ke basis.
+        // Laporan warisan tanpa snapshot pakai skor saat ini sebagai basis sekali.
+        const base = rep.reporterBaseScore ?? rep.reporterTrustScore;
+        const updatedTrust = calculateReporterScore(base, newUp, newDown);
 
         return {
           ...rep,
@@ -488,12 +547,13 @@ export default function App() {
           downvotes: newDown,
           userVoted: newUserVoted,
           reporterTrustScore: updatedTrust,
+          reporterBaseScore: base,
         };
       });
 
       const updated: GasStation = {
         ...st,
-        verifiedCount: st.verifiedCount + (voteType === 'up' ? 1 : 0),
+        verifiedCount: Math.max(0, st.verifiedCount + verifiedDelta),
         reports: updatedReports,
       };
 
@@ -614,9 +674,10 @@ export default function App() {
         ...logs.map((l) => deleteLogFromDb(l.id)),
       ]);
       const freshStats = {
-        reputationPoints: 100,
+        reputationPoints: 0,
         totalReports: 0,
-        credibilityScore: 5.0,
+        credibilityScore: NEW_USER_SCORE,
+        isVerified: false,
         activeVehicleId: '',
       };
       await saveUserProfileToDb(currentUser.uid, freshStats);

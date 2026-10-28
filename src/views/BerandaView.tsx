@@ -59,7 +59,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   const monthRangeLabel = formatRentangBulanBerjalan();
 
   return (
-    <div className="flex flex-col w-full gap-5">
+    <div className="flex flex-col w-full gap-5 pb-28">
       {/* 1. Active Vehicle Identity Banner */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#006194] via-[#007bb9] to-[#006a63] p-4 text-white shadow-lg shadow-[#006194]/20">
         <div className="relative z-10 flex flex-col gap-3">

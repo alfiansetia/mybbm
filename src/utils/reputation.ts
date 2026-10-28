@@ -2,17 +2,96 @@ import { CommunityReport, AvailabilityStatus, GasStation } from '../types';
 
 export interface ReputationTier {
   label: string;
-  badgeColor: string;
   minScore: number;
   icon: string;
+  badgeBg: string;
+  textColor: string;
+  borderColor: string;
+  iconColor: string;
 }
 
+/**
+ * SATU-SATUNYA sumber tier reputasi. Badge, legenda Akun, dan rule terverifikasi
+ * semuanya turun dari tabel ini — jangan bikin ambang tandingan di tempat lain.
+ */
 export const REPUTATION_TIERS: ReputationTier[] = [
-  { label: 'Master Komunitas', badgeColor: 'bg-amber-100 text-amber-800 border-amber-300', minScore: 4.8, icon: 'military_tech' },
-  { label: 'Kontributor Terpercaya', badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300', minScore: 4.5, icon: 'verified' },
-  { label: 'Motorist Aktif', badgeColor: 'bg-sky-100 text-sky-800 border-sky-300', minScore: 3.5, icon: 'two_wheeler' },
-  { label: 'Warga Baru', badgeColor: 'bg-slate-100 text-slate-700 border-slate-300', minScore: 1.0, icon: 'person' },
+  {
+    label: 'Master Komunitas',
+    minScore: 4.8,
+    icon: 'military_tech',
+    badgeBg: 'bg-gradient-to-r from-amber-500/15 via-yellow-400/20 to-amber-500/10',
+    textColor: 'text-amber-900',
+    borderColor: 'border-amber-400/80',
+    iconColor: 'text-amber-600',
+  },
+  {
+    label: 'Kontributor Terpercaya',
+    minScore: 4.5,
+    icon: 'verified',
+    badgeBg: 'bg-gradient-to-r from-emerald-500/15 via-teal-400/20 to-emerald-500/10',
+    textColor: 'text-emerald-900',
+    borderColor: 'border-emerald-400/80',
+    iconColor: 'text-emerald-600',
+  },
+  {
+    label: 'Motorist Aktif',
+    minScore: 3.5,
+    icon: 'two_wheeler',
+    badgeBg: 'bg-gradient-to-r from-sky-500/15 via-sky-400/20 to-sky-500/10',
+    textColor: 'text-sky-900',
+    borderColor: 'border-sky-400/80',
+    iconColor: 'text-[#006194]',
+  },
+  {
+    label: 'Warga Baru',
+    minScore: 1.0,
+    icon: 'person',
+    badgeBg: 'bg-slate-100',
+    textColor: 'text-slate-700',
+    borderColor: 'border-slate-300',
+    iconColor: 'text-slate-500',
+  },
 ];
+
+/** Skor awal pengguna baru — Warga Baru, bukan master instan. */
+export const NEW_USER_SCORE = 3.0;
+
+/** Centang "terverifikasi" diperoleh, bukan bawaan lahir: minimal tier Kontributor. */
+export const VERIFIED_SCORE_MIN = 4.5;
+
+/** Bonus per laporan terkirim (aktivitas murni, tanpa vote fiktif). */
+export const REPORT_ACTIVITY_STEP = 0.02;
+
+/** Jeda wajib antar laporan (anti-spam). */
+export const REPORT_COOLDOWN_MS = 3 * 60 * 1000;
+
+/** Jeda bila laporan dikirim padahal info sebelumnya ditolak komunitas. */
+export const PENALIZED_COOLDOWN_MS = 15 * 60 * 1000;
+
+/** Net vote (up − 1.5×down) ≤ ini = info pelapor ditolak komunitas. */
+export const REJECTED_NET_MAX = -3;
+
+/** Penalti skor bila tetap melapor setelah infonya ditolak. */
+export const REJECTED_PENALTY = 0.3;
+
+/** Sisa cooldown (ms) dari profil. 0 = boleh melapor. */
+export function reportCooldownLeftMs(
+  cooldownUntilMs?: number,
+  now: number = Date.now()
+): number {
+  return Math.max(0, (cooldownUntilMs ?? 0) - now);
+}
+
+/** "150000 ms" → "2:30" untuk label tombol. */
+export function formatCooldown(ms: number): string {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Net peer-feedback satu laporan. */
+export function peerNetOf(upvotes: number, downvotes: number): number {
+  return upvotes - downvotes * 1.5;
+}
 
 export function getReputationTier(score: number): ReputationTier {
   for (const tier of REPUTATION_TIERS) {
@@ -24,20 +103,19 @@ export function getReputationTier(score: number): ReputationTier {
 }
 
 /**
- * Calculates dynamic reporter trust score (1.0 to 5.0)
- * based on upvotes, downvotes and verified history.
+ * Skor trust MURNI dari vote: basis TETAP + bonus vote saat ini.
+ * Idempoten — vote yang sama selalu menghasilkan skor yang sama,
+ * mencabut vote mengembalikan skor ke basis. Jangan pernah passing
+ * skor-yang-sudah-berbonus sebagai basis (itu menggembungkan skor).
  */
 export function calculateReporterScore(
-  baseScore: number = 4.5,
+  baseScore: number = NEW_USER_SCORE,
   upvotes: number = 0,
-  downvotes: number = 0,
-  totalReports: number = 1
+  downvotes: number = 0
 ): number {
   const netVotes = upvotes - downvotes * 1.5;
   const voteBonus = Math.min(1.0, Math.max(-2.0, netVotes * 0.05));
-  const activityBonus = Math.min(0.5, totalReports * 0.02);
-
-  const finalScore = Math.min(5.0, Math.max(1.0, baseScore + voteBonus + activityBonus));
+  const finalScore = Math.min(5.0, Math.max(1.0, baseScore + voteBonus));
   return Number(finalScore.toFixed(1));
 }
 
