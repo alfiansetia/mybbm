@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Vehicle, FuelLog } from '../types';
+import { ServiceTracker } from '../utils/serviceTracker';
 import {
   ResponsiveContainer,
   LineChart,
@@ -36,89 +37,133 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
   onChangeVehicle,
   onExportCSV,
 }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<'7 Hari' | 'Bulan Ini' | '30 Hari' | 'Tahun 2026'>('Bulan Ini');
+  const currentYear = new Date().getFullYear();
+  const currentMonthLabel = new Date().toLocaleDateString('id-ID', { month: 'short', year: 'numeric' });
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('Bulan Ini');
   const [activeMetric, setActiveMetric] = useState<ChartMetric>('kmL');
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   // Filter logs for this vehicle
   const vehicleLogs = logs.filter((l) => l.vehicleId === activeVehicle.id);
+  const hasData = vehicleLogs.length > 0;
 
-  // Compute metrics
-  const totalBiaya = vehicleLogs.reduce((acc, curr) => acc + curr.totalAmount, 0) || 285000;
-  const totalLiters = vehicleLogs.reduce((acc, curr) => acc + curr.liters, 0) || 28.5;
+  // Compute metrics — murni dari data user, tanpa angka fallback
+  const totalBiaya = vehicleLogs.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const totalLiters = vehicleLogs.reduce((acc, curr) => acc + curr.liters, 0);
   const validKmLs = vehicleLogs.filter((l) => l.calculatedKmL).map((l) => l.calculatedKmL!);
   const avgKmL =
     validKmLs.length > 0
       ? Number((validKmLs.reduce((a, b) => a + b, 0) / validKmLs.length).toFixed(1))
-      : activeVehicle.type === 'motor'
-      ? 49.8
-      : 14.5;
-  const totalDistance = vehicleLogs.reduce((acc, curr) => acc + (curr.distanceKm || 0), 0) || 1419;
-  const costPerKm = totalDistance > 0 ? Math.round(totalBiaya / totalDistance) : 201;
+      : 0;
+  const totalDistance = vehicleLogs.reduce((acc, curr) => acc + (curr.distanceKm || 0), 0);
+  const costPerKm = totalDistance > 0 ? Math.round(totalBiaya / totalDistance) : 0;
 
-  // Monthly trends aggregated dataset
+  // Status servis dari data nyata (dipakai kartu oli, bukan hardcode 150 KM)
+  const serviceStatus = useMemo(() => {
+    let savedBaseline: number | null = null;
+    try {
+      const saved = localStorage.getItem(`mybbm_last_service_${activeVehicle.id}`);
+      if (saved) savedBaseline = parseInt(saved, 10);
+    } catch {
+      // ignore
+    }
+    return ServiceTracker.evaluateServiceStatus(activeVehicle, logs, savedBaseline);
+  }, [activeVehicle, logs]);
+
+  // Tren 6 bulan terakhir — agregasi nyata dari log user (bukan data contoh statis)
   const monthlyData: MonthlyDataPoint[] = useMemo(() => {
-    const isMotor = activeVehicle.type === 'motor';
-    const baseKmL = isMotor ? 46.0 : 13.0;
+    const shortMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+    const fullMonths = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const now = new Date();
+    const out: MonthlyDataPoint[] = [];
 
-    return [
-      {
-        month: 'Mei',
-        fullMonth: 'Mei 2026',
-        kmL: Number((baseKmL + 0.8).toFixed(1)),
-        liters: isMotor ? 32.5 : 98.0,
-        cost: isMotor ? 325000 : 1372000,
-        distance: isMotor ? 1520 : 1350,
-        logsCount: 4,
-      },
-      {
-        month: 'Jun',
-        fullMonth: 'Juni 2026',
-        kmL: Number((baseKmL + 1.6).toFixed(1)),
-        liters: isMotor ? 31.0 : 94.0,
-        cost: isMotor ? 310000 : 1316000,
-        distance: isMotor ? 1475 : 1372,
-        logsCount: 3,
-      },
-      {
-        month: 'Jul',
-        fullMonth: 'Juli 2026',
-        kmL: Number((baseKmL + 2.2).toFixed(1)),
-        liters: isMotor ? 29.5 : 89.0,
-        cost: isMotor ? 295000 : 1246000,
-        distance: isMotor ? 1420 : 1352,
-        logsCount: 4,
-      },
-      {
-        month: 'Ags',
-        fullMonth: 'Agustus 2026',
-        kmL: Number((baseKmL + 1.2).toFixed(1)),
-        liters: isMotor ? 34.0 : 102.0,
-        cost: isMotor ? 340000 : 1428000,
-        distance: isMotor ? 1604 : 1448,
-        logsCount: 5,
-      },
-      {
-        month: 'Sep',
-        fullMonth: 'September 2026',
-        kmL: Number((baseKmL + 2.8).toFixed(1)),
-        liters: isMotor ? 30.0 : 91.0,
-        cost: isMotor ? 300000 : 1274000,
-        distance: isMotor ? 1464 : 1437,
-        logsCount: 4,
-      },
-      {
-        month: 'Okt',
-        fullMonth: 'Oktober 2026',
-        kmL: avgKmL,
-        liters: Number(totalLiters.toFixed(1)),
-        cost: totalBiaya,
-        distance: totalDistance,
-        logsCount: vehicleLogs.length || 3,
-      },
-    ];
-  }, [activeVehicle.type, avgKmL, totalLiters, totalBiaya, totalDistance, vehicleLogs.length]);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const inMonth = vehicleLogs.filter((l) => {
+        const t = new Date(l.dateTime);
+        return !isNaN(t.getTime()) && t.getFullYear() === d.getFullYear() && t.getMonth() === d.getMonth();
+      });
+      const liters = inMonth.reduce((a, c) => a + c.liters, 0);
+      const cost = inMonth.reduce((a, c) => a + c.totalAmount, 0);
+      const distance = inMonth.reduce((a, c) => a + (c.distanceKm || 0), 0);
+      const kms = inMonth.filter((l) => l.calculatedKmL).map((l) => l.calculatedKmL!);
+      out.push({
+        month: shortMonths[d.getMonth()],
+        fullMonth: `${fullMonths[d.getMonth()]} ${d.getFullYear()}`,
+        kmL: kms.length > 0 ? Number((kms.reduce((a, b) => a + b, 0) / kms.length).toFixed(1)) : 0,
+        liters: Number(liters.toFixed(1)),
+        cost,
+        distance,
+        logsCount: inMonth.length,
+      });
+    }
+    return out;
+  }, [vehicleLogs]);
+
+  // Selisih efisiensi bulan berjalan vs bulan lalu (hanya jika keduanya ada data)
+  const lastMonth = monthlyData[monthlyData.length - 1];
+  const prevMonth = monthlyData[monthlyData.length - 2];
+  const deltaKmL =
+    lastMonth.logsCount > 0 && prevMonth.logsCount > 0
+      ? Number((lastMonth.kmL - prevMonth.kmL).toFixed(1))
+      : null;
+
+  // Komposisi pengeluaran per brand SPBU — dari data nyata
+  const brandStats = useMemo(() => {
+    const map = new Map<string, number>();
+    vehicleLogs.forEach((l) => {
+      map.set(l.stationBrand, (map.get(l.stationBrand) ?? 0) + l.totalAmount);
+    });
+    const total = [...map.values()].reduce((a, b) => a + b, 0);
+    return [...map.entries()]
+      .map(([name, amount]) => ({
+        name,
+        amount,
+        pct: total > 0 ? Math.round((amount / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [vehicleLogs]);
+
+  // Komposisi liter per jenis BBM — dari data nyata
+  const fuelStats = useMemo(() => {
+    const map = new Map<string, number>();
+    vehicleLogs.forEach((l) => {
+      map.set(l.fuelType, (map.get(l.fuelType) ?? 0) + l.liters);
+    });
+    const total = [...map.values()].reduce((a, b) => a + b, 0);
+    return [...map.entries()]
+      .map(([name, liters]) => ({
+        name,
+        liters,
+        pct: total > 0 ? Math.round((liters / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.liters - a.liters);
+  }, [vehicleLogs]);
+
+  // SPBU dengan efisiensi full-tank terbaik — dari data nyata
+  const bestStation = useMemo(() => {
+    const byStation = new Map<string, number[]>();
+    vehicleLogs.forEach((l) => {
+      if (l.calculatedKmL && l.calculatedKmL > 0) {
+        const arr = byStation.get(l.stationName) ?? [];
+        arr.push(l.calculatedKmL);
+        byStation.set(l.stationName, arr);
+      }
+    });
+    let bestName = '';
+    let bestKmL = 0;
+    let bestCount = 0;
+    byStation.forEach((arr, name) => {
+      const avg = Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1));
+      if (avg > bestKmL) {
+        bestKmL = avg;
+        bestName = name;
+        bestCount = arr.length;
+      }
+    });
+    return bestCount > 0 ? { name: bestName, kmL: bestKmL, count: bestCount } : null;
+  }, [vehicleLogs]);
 
   const handleExport = () => {
     setIsExporting(true);
@@ -194,7 +239,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
 
         {/* Period Selector Tabs */}
         <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 no-scrollbar">
-          {(['7 Hari', 'Bulan Ini', '30 Hari', 'Tahun 2026'] as const).map((period) => (
+          {(['7 Hari', 'Bulan Ini', '30 Hari', `Tahun ${currentYear}`] as const).map((period) => (
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
@@ -205,7 +250,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               }`}
               type="button"
             >
-              {period === 'Bulan Ini' ? 'Bulan Ini (Okt 2026)' : period}
+                {period === 'Bulan Ini' ? `Bulan Ini (${currentMonthLabel})` : period}
             </button>
           ))}
         </div>
@@ -228,10 +273,14 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
             </div>
             <div className="mt-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-50 text-[#059669] text-[10px] font-bold border border-emerald-200">
               <span className="material-symbols-outlined text-[13px]">trending_up</span>
-              <span>+2.4 km/L</span>
+              <span>
+                {deltaKmL !== null ? `${deltaKmL >= 0 ? '+' : ''}${deltaKmL} km/L` : '—'}
+              </span>
             </div>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1">Lebih irit drpd Sept</span>
+          <span className="text-[10px] text-slate-400 mt-1">
+            {deltaKmL !== null ? 'vs bulan lalu' : 'Belum ada pembanding'}
+          </span>
         </div>
 
         {/* Card 2: Total Biaya */}
@@ -249,7 +298,9 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               <span>{totalLiters.toFixed(1)} Liter diisi</span>
             </div>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1">Okt 2026 ({vehicleLogs.length} struk)</span>
+          <span className="text-[10px] text-slate-400 mt-1">
+            {currentMonthLabel} ({vehicleLogs.length} struk)
+          </span>
         </div>
 
         {/* Card 3: Biaya / Jarak */}
@@ -301,7 +352,9 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               <span className="material-symbols-outlined text-[19px] text-[#006194]">show_chart</span>
               <h3 className="text-sm font-bold text-slate-900 font-headline">Tren Konsumsi BBM Bulanan</h3>
             </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">Grafik historis konsumsi bulanan (Mei - Okt 2026)</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Grafik historis konsumsi bulanan ({monthlyData[0].month} - {lastMonth.month} {currentYear})
+            </p>
           </div>
 
           {/* Metric Selector Pills */}
@@ -343,6 +396,15 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
         </div>
 
         {/* Recharts Line Chart Container */}
+        {!hasData ? (
+          <div className="w-full py-8 px-4 flex flex-col items-center justify-center text-center gap-2 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+            <span className="material-symbols-outlined text-slate-300 text-[32px]">show_chart</span>
+            <p className="text-xs font-bold text-slate-700">Belum ada data untuk grafik</p>
+            <p className="text-[11px] text-slate-500">
+              Catat pengisian BBM pertamamu, grafik tren akan muncul di sini.
+            </p>
+          </div>
+        ) : (
         <div className="w-full h-56 pt-2">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
@@ -362,13 +424,7 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
                 tickLine={false}
               />
               <YAxis
-                domain={
-                  activeMetric === 'kmL'
-                    ? [activeVehicle.type === 'motor' ? 40 : 10, activeVehicle.type === 'motor' ? 55 : 18]
-                    : activeMetric === 'liters'
-                    ? [20, 45]
-                    : [200000, 400000]
-                }
+                domain={['auto', 'auto']}
                 tick={{ fontSize: 10, fill: '#94a3b8' }}
                 axisLine={false}
                 tickLine={false}
@@ -415,15 +471,24 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
             </LineChart>
           </ResponsiveContainer>
         </div>
+        )}
 
         {/* Dynamic Highlight Insight Banner */}
         <div className="bg-sky-50 text-[#004b73] px-3 py-2 rounded-lg text-xs font-semibold border border-sky-100 flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[16px] text-[#059669]">trending_up</span>
             <span>
-              {selectedMonth
-                ? `Bulan ${selectedMonth}: Efisiensi tercatat stabil di atas target efisiensi.`
-                : 'Konsumsi Oktober paling irit (+6.8% vs Mei) berkat servis berkala.'}
+              {(() => {
+                if (selectedMonth) {
+                  const m = monthlyData.find((x) => x.month === selectedMonth);
+                  if (m && m.logsCount > 0) {
+                    return `Bulan ${m.fullMonth}: ${m.logsCount}x pengisian, efisiensi ${m.kmL} km/L, biaya Rp ${m.cost.toLocaleString('id-ID')}.`;
+                  }
+                  return `Bulan ${selectedMonth}: belum ada catatan pengisian.`;
+                }
+                if (!hasData) return 'Belum ada data — catat pengisian pertamamu untuk melihat insight.';
+                return `Bulan ${lastMonth.fullMonth}: ${lastMonth.logsCount}x pengisian, efisiensi ${lastMonth.kmL} km/L.`;
+              })()}
             </span>
           </div>
           <span className="text-[10px] text-slate-400 font-mono">recharts live</span>
@@ -468,26 +533,46 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
               <span className="material-symbols-outlined text-[15px] text-slate-400">storefront</span>
               Berdasarkan Brand SPBU
             </span>
-            <span className="text-slate-400 text-[10px]">2 Operator</span>
+            <span className="text-slate-400 text-[10px]">
+              {brandStats.length > 0 ? `${brandStats.length} Operator` : 'Belum ada data'}
+            </span>
           </div>
 
-          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 gap-0.5">
-            <div className="h-full bg-[#ee2737] rounded-l-full" style={{ width: '78%' }} />
-            <div className="h-full bg-[#ffd200] rounded-r-full" style={{ width: '22%' }} />
-          </div>
+          {brandStats.length === 0 ? (
+            <p className="text-[11px] text-slate-400 py-2 text-center">
+              Catat pengisian untuk melihat komposisi brand.
+            </p>
+          ) : (
+            <>
+              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 gap-0.5">
+                {brandStats.slice(0, 2).map((b, i) => (
+                  <div
+                    key={b.name}
+                    className={`h-full ${i === 0 ? 'rounded-l-full' : ''} ${i === brandStats.slice(0, 2).length - 1 ? 'rounded-r-full' : ''}`}
+                    style={{
+                      width: `${b.pct}%`,
+                      backgroundColor: i === 0 ? '#ee2737' : '#ffd200',
+                    }}
+                  />
+                ))}
+              </div>
 
-          <div className="flex items-center justify-between pt-0.5 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ee2737]" />
-              <span className="text-slate-800 font-medium">Pertamina</span>
-              <span className="text-slate-400 text-[10px] font-bold">(78% · Rp222.300)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ffd200]" />
-              <span className="text-slate-800 font-medium">Shell</span>
-              <span className="text-slate-400 text-[10px] font-bold">(22% · Rp62.700)</span>
-            </div>
-          </div>
+              <div className="flex items-center justify-between pt-0.5 text-xs flex-wrap gap-1">
+                {brandStats.slice(0, 2).map((b, i) => (
+                  <div key={b.name} className="flex items-center gap-1.5">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: i === 0 ? '#ee2737' : '#ffd200' }}
+                    />
+                    <span className="text-slate-800 font-medium">{b.name}</span>
+                    <span className="text-slate-400 text-[10px] font-bold">
+                      ({b.pct}% · Rp{b.amount.toLocaleString('id-ID')})
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="w-full h-px bg-slate-100" />
@@ -503,21 +588,43 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
           </div>
 
           <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 gap-0.5">
-            <div className="h-full bg-[#059669] rounded-l-full" style={{ width: '70%' }} />
-            <div className="h-full bg-[#005baa] rounded-r-full" style={{ width: '30%' }} />
+            {fuelStats.length === 0 ? (
+              <div className="h-full w-full flex items-center justify-center">
+                <span className="text-[9px] text-slate-400">Belum ada data</span>
+              </div>
+            ) : (
+              fuelStats.slice(0, 2).map((f, i) => (
+                <div
+                  key={f.name}
+                  className={`h-full ${i === 0 ? 'rounded-l-full' : ''} ${i === fuelStats.slice(0, 2).length - 1 ? 'rounded-r-full' : ''}`}
+                  style={{
+                    width: `${f.pct}%`,
+                    backgroundColor: i === 0 ? '#059669' : '#005baa',
+                  }}
+                />
+              ))
+            )}
           </div>
 
-          <div className="flex items-center justify-between pt-0.5 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#059669]" />
-              <span className="text-slate-800 font-medium">Pertalite (RON 90)</span>
-              <span className="text-slate-400 text-[10px] font-bold">(70% · 20 L)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#005baa]" />
-              <span className="text-slate-800 font-medium">Pertamax (RON 92)</span>
-              <span className="text-slate-400 text-[10px] font-bold">(30% · 8.5 L)</span>
-            </div>
+          <div className="flex items-center justify-between pt-0.5 text-xs flex-wrap gap-1">
+            {fuelStats.length === 0 ? (
+              <span className="text-slate-400 text-[11px]">
+                Catat pengisian untuk melihat komposisi BBM.
+              </span>
+            ) : (
+              fuelStats.slice(0, 2).map((f, i) => (
+                <div key={f.name} className="flex items-center gap-1.5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: i === 0 ? '#059669' : '#005baa' }}
+                  />
+                  <span className="text-slate-800 font-medium">{f.name}</span>
+                  <span className="text-slate-400 text-[10px] font-bold">
+                    ({f.pct}% · {f.liters.toFixed(1)} L)
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -535,10 +642,18 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
           </div>
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-xs font-bold text-slate-900">SPBU Rekomendasi Hemat</span>
-            <p className="text-xs text-slate-600 mt-0.5 leading-snug">
-              Pengisian di <strong className="text-slate-900">SPBU MT Haryono</strong> menghasilkan konsumsi paling stabil yaitu{' '}
-              <strong className="text-[#006194]">51.2 km/L</strong>. Pertahankan gaya berkendara halus!
-            </p>
+            {bestStation ? (
+              <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                Pengisian di <strong className="text-slate-900">{bestStation.name}</strong> menghasilkan
+                konsumsi paling stabil yaitu <strong className="text-[#006194]">{bestStation.kmL} km/L</strong>{' '}
+                ({bestStation.count}x full tank). Pertahankan gaya berkendara halus!
+              </p>
+            ) : (
+              <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                Belum ada data efisiensi. Aktifkan <strong>Full Tank</strong> saat mencatat agar
+                rekomendasi muncul di sini.
+              </p>
+            )}
           </div>
         </div>
 
@@ -551,15 +666,27 @@ export const StatistikView: React.FC<StatistikViewProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-900">Jadwal Ganti Oli Mesin</span>
               <span className="px-2 py-0.5 rounded-full bg-amber-100 text-[#894d00] text-[10px] font-extrabold">
-                Sisa 150 KM
+                {serviceStatus.remainingKm <= 0
+                  ? 'Terlewati'
+                  : `Sisa ${serviceStatus.remainingKm.toLocaleString('id-ID')} KM`}
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-0.5 leading-snug">
-              Odometer saat ini: <strong className="text-slate-900">{activeVehicle.currentOdo.toLocaleString('id-ID')} km</strong>. Target servis berkala di{' '}
-              <strong className="text-slate-900">{(activeVehicle.currentOdo + 150).toLocaleString('id-ID')} km</strong>.
+              Odometer saat ini:{' '}
+              <strong className="text-slate-900">
+                {serviceStatus.currentMileage.toLocaleString('id-ID')} km
+              </strong>
+              . Target servis berkala di{' '}
+              <strong className="text-slate-900">
+                {serviceStatus.nextServiceMileage.toLocaleString('id-ID')} km
+              </strong>
+              .
             </p>
             <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-              <div className="bg-[#894d00] h-full rounded-full" style={{ width: '88%' }} />
+              <div
+                className="bg-[#894d00] h-full rounded-full"
+                style={{ width: `${serviceStatus.progressPercentage}%` }}
+              />
             </div>
           </div>
         </div>

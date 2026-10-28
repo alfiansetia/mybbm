@@ -6,7 +6,7 @@ import { ReputationBadge } from '../components/ReputationBadge';
 interface AkunViewProps {
   userProfile: UserProfile;
   vehicles: Vehicle[];
-  activeVehicleId: string;
+  activeVehicleId: string | null;
   currentUser?: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null } | null;
   onLoginGoogle?: () => void;
   onLogoutGoogle?: () => void;

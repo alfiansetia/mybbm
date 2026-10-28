@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Vehicle,
   GasStation,
@@ -11,12 +11,7 @@ import {
   UserProfile,
   CommunityReport,
 } from './types';
-import {
-  initialVehicles,
-  initialStations,
-  initialLogs,
-  initialUserProfile,
-} from './data/seedData';
+import { initialStations } from './data/seedData';
 import {
   testConnection,
   auth,
@@ -29,8 +24,10 @@ import {
   updateStationInDb,
   subscribeVehicles,
   saveVehicleToDb,
+  deleteVehicleFromDb,
   subscribeLogs,
   saveLogToDb,
+  deleteLogFromDb,
   subscribeUserProfile,
   saveUserProfileToDb,
 } from './services/dbService';
@@ -45,48 +42,76 @@ import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
 import { calculateReporterScore } from './utils/reputation';
 
+// Data pribadi (kendaraan/log/profil) murni milik user — tidak ada seed dummy.
+// Hanya stations (data publik bersama) yang memakai seed bootstrap.
+const STORAGE_VERSION = 'v2-per-user';
+const GUEST_PROFILE: UserProfile = {
+  name: 'Tamu',
+  email: '',
+  avatar: '',
+  credibilityScore: 0,
+  reputationPoints: 0,
+  isVerified: false,
+  activeVehicleId: '',
+  totalReports: 0,
+};
+
+function loadJSON<T>(key: string, fallback: T): T {
+  try {
+    if (localStorage.getItem('mybbm_schema_version') !== STORAGE_VERSION) return fallback;
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function App() {
   // Authentication state
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
-  // Local storage backed state as offline baseline
-  const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
-    const saved = localStorage.getItem('mybbm_vehicles');
-    return saved ? JSON.parse(saved) : initialVehicles;
+  // State milik user — default kosong, diisi dari Firestore per akun
+  const [vehicles, setVehicles] = useState<Vehicle[]>(() => loadJSON('mybbm_vehicles', []));
+
+  const [activeVehicleId, setActiveVehicleId] = useState<string | null>(() => {
+    try {
+      if (localStorage.getItem('mybbm_schema_version') !== STORAGE_VERSION) return null;
+      return localStorage.getItem('mybbm_active_vehicle');
+    } catch {
+      return null;
+    }
   });
 
-  const [activeVehicleId, setActiveVehicleId] = useState<string>(() => {
-    return localStorage.getItem('mybbm_active_vehicle') || initialVehicles[0].id;
-  });
+  const [logs, setLogs] = useState<FuelLog[]>(() => loadJSON('mybbm_logs', []));
 
-  const [logs, setLogs] = useState<FuelLog[]>(() => {
-    const saved = localStorage.getItem('mybbm_logs');
-    return saved ? JSON.parse(saved) : initialLogs;
-  });
-
+  // Stations = data publik shared, wajar memakai seed bootstrap + realtime Firestore
   const [stations, setStations] = useState<GasStation[]>(() => {
     const saved = localStorage.getItem('mybbm_stations');
     return saved ? JSON.parse(saved) : initialStations;
   });
 
-  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    const saved = localStorage.getItem('mybbm_user');
-    return saved ? JSON.parse(saved) : initialUserProfile;
-  });
+  const [userProfile, setUserProfile] = useState<UserProfile>(() =>
+    loadJSON('mybbm_user', GUEST_PROFILE)
+  );
 
   const [activeTab, setActiveTab] = useState<NavTab>('beranda');
   const [catatInitialMode, setCatatInitialMode] = useState<'scan' | 'manual'>('scan');
   const [selectedStationDetailId, setSelectedStationDetailId] = useState<string | null>(null);
 
-  // Refs untuk hindari stale closure di subscription Firestore
-  const activeVehicleIdRef = useRef(activeVehicleId);
-  const vehiclesRef = useRef(vehicles);
+  // Migrasi sekali: buang cache dummy versi lama (seed Budi Santoso dkk).
+  // Cache stations dipertahankan karena itu data publik.
   useEffect(() => {
-    activeVehicleIdRef.current = activeVehicleId;
-  }, [activeVehicleId]);
-  useEffect(() => {
-    vehiclesRef.current = vehicles;
-  }, [vehicles]);
+    if (localStorage.getItem('mybbm_schema_version') !== STORAGE_VERSION) {
+      ['mybbm_vehicles', 'mybbm_active_vehicle', 'mybbm_logs', 'mybbm_user'].forEach((k) =>
+        localStorage.removeItem(k)
+      );
+      localStorage.setItem('mybbm_schema_version', STORAGE_VERSION);
+      setVehicles([]);
+      setActiveVehicleId(null);
+      setLogs([]);
+      setUserProfile(GUEST_PROFILE);
+    }
+  }, []);
 
   // Test Firestore connection on mount
   useEffect(() => {
@@ -115,7 +140,8 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // 3. User-scoped sync — jalan hanya saat uid berubah
+  // 3. User-scoped sync — jalan hanya saat uid berubah.
+  // Data murni dari Firestore milik akun ini. Cloud kosong = tetap kosong (tanpa seed dummy).
   useEffect(() => {
     if (!currentUser) return;
     const uid = currentUser.uid;
@@ -123,7 +149,6 @@ export default function App() {
     const unsubProfile = subscribeUserProfile(uid, (profile) => {
       if (profile) {
         setUserProfile(profile);
-        localStorage.setItem('mybbm_user', JSON.stringify(profile));
         if (profile.activeVehicleId) {
           setActiveVehicleId(profile.activeVehicleId);
         }
@@ -138,7 +163,7 @@ export default function App() {
           credibilityScore: 5.0,
           reputationPoints: 100,
           isVerified: true,
-          activeVehicleId: activeVehicleIdRef.current,
+          activeVehicleId: '',
           totalReports: 0,
         };
         setUserProfile(newProfile);
@@ -147,28 +172,16 @@ export default function App() {
     });
 
     const unsubVehicles = subscribeVehicles(uid, (cloudVehicles) => {
-      if (cloudVehicles && cloudVehicles.length > 0) {
-        setVehicles(cloudVehicles);
-        if (!cloudVehicles.some((v) => v.id === activeVehicleIdRef.current)) {
-          setActiveVehicleId(cloudVehicles[0].id);
-        }
-      } else {
-        // Seed hanya sekali saat cloud kosong, pakai snapshot ref (hindari forEach tanpa await)
-        const localVehicles = vehiclesRef.current;
-        if (localVehicles.length > 0) {
-          (async () => {
-            for (const v of localVehicles) {
-              await saveVehicleToDb({ ...v, userId: uid });
-            }
-          })();
-        }
-      }
+      setVehicles(cloudVehicles);
+      setActiveVehicleId((prev) =>
+        prev && cloudVehicles.some((v) => v.id === prev)
+          ? prev
+          : cloudVehicles[0]?.id ?? null
+      );
     });
 
     const unsubLogs = subscribeLogs(uid, (cloudLogs) => {
-      if (cloudLogs && cloudLogs.length > 0) {
-        setLogs(cloudLogs);
-      }
+      setLogs(cloudLogs);
     });
 
     return () => {
@@ -185,7 +198,11 @@ export default function App() {
   }, [vehicles]);
 
   useEffect(() => {
-    localStorage.setItem('mybbm_active_vehicle', activeVehicleId);
+    if (activeVehicleId) {
+      localStorage.setItem('mybbm_active_vehicle', activeVehicleId);
+    } else {
+      localStorage.removeItem('mybbm_active_vehicle');
+    }
   }, [activeVehicleId]);
 
   useEffect(() => {
@@ -200,8 +217,9 @@ export default function App() {
     localStorage.setItem('mybbm_user', JSON.stringify(userProfile));
   }, [userProfile]);
 
+  // Kendaraan aktif milik user yang login — null kalau belum ada / belum login
   const activeVehicle =
-    vehicles.find((v) => v.id === activeVehicleId) || vehicles[0] || initialVehicles[0];
+    vehicles.find((v) => v.id === activeVehicleId) ?? null;
 
   const handleSelectVehicle = (id: string) => {
     setActiveVehicleId(id);
@@ -224,8 +242,9 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Add new fuel log and save to Firestore
+  // Add new fuel log and save to Firestore (hanya saat login + ada kendaraan aktif)
   const handleSaveLog = async (newLog: FuelLog) => {
+    if (!currentUser || !activeVehicle) return;
     setLogs((prev) => [newLog, ...prev]);
 
     // Update vehicle current odometer if higher
@@ -241,12 +260,10 @@ export default function App() {
       );
     }
 
-    // Persist to Cloud Firestore if authenticated
-    if (currentUser) {
-      await saveLogToDb({ ...newLog, userId: currentUser.uid });
-      if (newLog.odometer > activeVehicle.currentOdo) {
-        await saveVehicleToDb({ ...updatedVehicle, userId: currentUser.uid });
-      }
+    // Persist to Cloud Firestore
+    await saveLogToDb({ ...newLog, userId: currentUser.uid });
+    if (newLog.odometer > activeVehicle.currentOdo) {
+      await saveVehicleToDb({ ...updatedVehicle, userId: currentUser.uid });
     }
 
     setActiveTab('beranda');
@@ -454,7 +471,7 @@ export default function App() {
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `mybbm_laporan_konsumsi_${activeVehicle.name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`
+      `mybbm_laporan_konsumsi_${(activeVehicle?.name ?? 'kendaraan').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -473,30 +490,33 @@ export default function App() {
     }
   };
 
-  const handleResetData = () => {
-    // Clear all cached keys in localStorage
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('mybbm')) {
-        keysToRemove.push(k);
-      }
+  // Reset = hapus data pribadi milik akun ini (kendaraan + log + statistik profil).
+  // Data stations (publik) dipertahankan.
+  const handleResetData = async () => {
+    if (currentUser) {
+      await Promise.all([
+        ...vehicles.map((v) => deleteVehicleFromDb(v.id)),
+        ...logs.map((l) => deleteLogFromDb(l.id)),
+      ]);
+      const freshStats = {
+        reputationPoints: 100,
+        totalReports: 0,
+        credibilityScore: 5.0,
+        activeVehicleId: '',
+      };
+      await saveUserProfileToDb(currentUser.uid, freshStats);
+      setUserProfile((prev) => ({ ...prev, ...freshStats }));
+    } else {
+      setUserProfile(GUEST_PROFILE);
     }
-    keysToRemove.forEach((key) => localStorage.removeItem(key));
 
-    // Reset React state to pristine seed data
-    setVehicles(initialVehicles);
-    setActiveVehicleId(initialVehicles[0].id);
-    setLogs(initialLogs);
-    setStations(initialStations);
-    setUserProfile(initialUserProfile);
+    setVehicles([]);
+    setActiveVehicleId(null);
+    setLogs([]);
 
-    // Save initial state into storage
-    localStorage.setItem('mybbm_vehicles', JSON.stringify(initialVehicles));
-    localStorage.setItem('mybbm_active_vehicle', initialVehicles[0].id);
-    localStorage.setItem('mybbm_logs', JSON.stringify(initialLogs));
-    localStorage.setItem('mybbm_stations', JSON.stringify(initialStations));
-    localStorage.setItem('mybbm_user', JSON.stringify(initialUserProfile));
+    ['mybbm_vehicles', 'mybbm_active_vehicle', 'mybbm_logs', 'mybbm_user'].forEach((k) =>
+      localStorage.removeItem(k)
+    );
   };
 
   const handleGoogleLogin = async () => {
@@ -511,6 +531,15 @@ export default function App() {
     try {
       await logoutUser();
       setCurrentUser(null);
+      // Bersihkan data pribadi dari memori + cache agar tidak bocor ke akun berikutnya
+      setVehicles([]);
+      setActiveVehicleId(null);
+      setLogs([]);
+      setUserProfile(GUEST_PROFILE);
+      ['mybbm_vehicles', 'mybbm_active_vehicle', 'mybbm_logs', 'mybbm_user'].forEach((k) =>
+        localStorage.removeItem(k)
+      );
+      setActiveTab('akun');
     } catch (err) {
       console.error('Google Logout failed:', err);
     }
@@ -525,6 +554,21 @@ export default function App() {
   else if (activeTab === 'catat-bbm') subtitle = 'Catat Pengisian';
   else if (activeTab === 'statistik') subtitle = 'Statistik & Analisis';
   else if (activeTab === 'akun') subtitle = 'Akun & Kendaraan';
+
+  // Tab yang butuh kendaraan aktif
+  const needsVehicle =
+    activeTab === 'beranda' || activeTab === 'catat-bbm' || activeTab === 'statistik';
+
+  // Wajib login: tamu hanya melihat ajakan masuk, tanpa data siapa pun
+  if (!currentUser) {
+    return (
+      <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
+        <main className="flex-1 flex flex-col w-full max-w-[480px] mx-auto px-4 pt-20 pb-safe">
+          <LoginGate onLogin={handleGoogleLogin} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
@@ -549,9 +593,11 @@ export default function App() {
             onSubmitReport={handleSubmitReport}
             onVoteReport={handleVoteReport}
           />
+        ) : !activeVehicle && needsVehicle ? (
+          <EmptyVehicleState onAdd={() => handleNavigateTab('akun')} />
         ) : activeTab === 'beranda' ? (
           <BerandaView
-            activeVehicle={activeVehicle}
+            activeVehicle={activeVehicle!}
             logs={logs}
             stations={stations}
             onNavigateTab={handleNavigateTab}
@@ -580,7 +626,7 @@ export default function App() {
           />
         ) : activeTab === 'catat-bbm' ? (
           <CatatBbmView
-            activeVehicle={activeVehicle}
+            activeVehicle={activeVehicle!}
             allVehicles={vehicles}
             stations={stations}
             initialMode={catatInitialMode}
@@ -589,7 +635,7 @@ export default function App() {
           />
         ) : activeTab === 'statistik' ? (
           <StatistikView
-            activeVehicle={activeVehicle}
+            activeVehicle={activeVehicle!}
             logs={logs}
             onChangeVehicle={() => handleNavigateTab('akun')}
             onExportCSV={handleExportCSV}
@@ -613,6 +659,62 @@ export default function App() {
       {!selectedStationDetailId && (
         <BottomNav activeTab={activeTab} onChangeTab={handleNavigateTab} />
       )}
+    </div>
+  );
+}
+
+// Pintu masuk untuk tamu: tanpa data dummy, tanpa bocoran data user lain
+function LoginGate({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-16 animate-in fade-in duration-150">
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#006194] to-[#007bb9] flex items-center justify-center text-white shadow-lg">
+        <span className="material-symbols-outlined text-[36px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+          water_drop
+        </span>
+      </div>
+      <div>
+        <h1 className="text-xl font-extrabold text-slate-900 font-headline">mybbm</h1>
+        <p className="text-sm text-slate-600 mt-1 max-w-[280px]">
+          Catat konsumsi BBM kendaraanmu dan pantau stok SPBU. Masuk untuk melihat datamu sendiri.
+        </p>
+      </div>
+      <button
+        onClick={onLogin}
+        type="button"
+        className="h-11 px-6 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-sm font-bold flex items-center gap-2 shadow-md active:scale-[0.99] transition-all"
+      >
+        <span className="material-symbols-outlined text-[20px]">login</span>
+        <span>Masuk dengan Google</span>
+      </button>
+      <p className="text-[11px] text-slate-400 flex items-center gap-1">
+        <span className="material-symbols-outlined text-[13px]">lock</span>
+        <span>Datamu hanya tersimpan di akunmu sendiri</span>
+      </p>
+    </div>
+  );
+}
+
+// Keadaan kosong: akun login tapi belum punya kendaraan
+function EmptyVehicleState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center text-center gap-3 py-16 animate-in fade-in duration-150">
+      <div className="w-14 h-14 rounded-full bg-sky-100 flex items-center justify-center text-[#006194]">
+        <span className="material-symbols-outlined text-[28px]">two_wheeler</span>
+      </div>
+      <div>
+        <h2 className="text-base font-extrabold text-slate-900 font-headline">Belum ada kendaraan</h2>
+        <p className="text-xs text-slate-500 mt-1 max-w-[260px]">
+          Tambahkan kendaraan pertamamu untuk mulai mencatat pengisian BBM.
+        </p>
+      </div>
+      <button
+        onClick={onAdd}
+        type="button"
+        className="h-10 px-5 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-[0.99] transition-all"
+      >
+        <span className="material-symbols-outlined text-[18px]">add</span>
+        <span>Tambah Kendaraan</span>
+      </button>
     </div>
   );
 }

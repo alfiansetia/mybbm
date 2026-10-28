@@ -3,7 +3,7 @@ import { Vehicle, UserProfile } from '../types';
 
 interface TopHeaderProps {
   currentSubtitle: string;
-  activeVehicle: Vehicle;
+  activeVehicle: Vehicle | null;
   allVehicles: Vehicle[];
   onSelectVehicle: (id: string) => void;
   userProfile: UserProfile;
@@ -51,9 +51,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             className="h-9 px-3 py-1 rounded-full bg-slate-200/70 hover:bg-slate-200 flex items-center gap-1.5 text-slate-800 transition-colors active:scale-95 text-xs font-semibold"
           >
             <span className="material-symbols-outlined text-[17px] text-[#006194]">
-              {activeVehicle.type === 'motor' ? 'two_wheeler' : 'directions_car'}
+              {activeVehicle?.type === 'mobil' ? 'directions_car' : 'two_wheeler'}
             </span>
-            <span className="max-w-[95px] truncate">{activeVehicle.name}</span>
+            <span className="max-w-[95px] truncate">
+              {activeVehicle?.name ?? 'Tambah kendaraan'}
+            </span>
             <span className="material-symbols-outlined text-[15px] text-slate-500">
               expand_more
             </span>
@@ -79,7 +81,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     }}
                     type="button"
                     className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between text-xs transition-colors ${
-                      v.id === activeVehicle.id
+                      v.id === activeVehicle?.id
                         ? 'bg-[#cce5ff] text-[#004b73] font-bold'
                         : 'hover:bg-slate-100 text-slate-700'
                     }`}
@@ -90,7 +92,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       </span>
                       <span className="truncate">{v.name}</span>
                     </div>
-                    {v.id === activeVehicle.id && (
+                    {v.id === activeVehicle?.id && (
                       <span className="material-symbols-outlined text-[16px] text-[#006194]">
                         check
                       </span>

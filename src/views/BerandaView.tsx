@@ -44,7 +44,12 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   const totalSpent = vehicleLogs.reduce((acc, curr) => acc + curr.totalAmount, 0);
   const totalLiters = vehicleLogs.reduce((acc, curr) => acc + curr.liters, 0);
   const totalDistance = vehicleLogs.reduce((acc, curr) => acc + (curr.distanceKm || 0), 0);
-  const averageCostPerKm = totalDistance > 0 ? Math.round(totalSpent / totalDistance) : 206;
+  const averageCostPerKm = totalDistance > 0 ? Math.round(totalSpent / totalDistance) : 0;
+
+  // Rentang tanggal bulan berjalan (dinamis, bukan hardcode)
+  const now = new Date();
+  const monthName = now.toLocaleDateString('id-ID', { month: 'short' });
+  const monthRangeLabel = `1–${now.getDate()} ${monthName} ${now.getFullYear()}`;
 
   // Format currency
   const formatRupiah = (val: number) => `Rp ${val.toLocaleString('id-ID')}`;
@@ -212,7 +217,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
             <h2 className="text-[16px] font-bold text-slate-800 font-headline">Ringkasan Bulan Ini</h2>
           </div>
           <span className="text-[11px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded-full font-medium">
-            1–18 Okt 2026
+            {monthRangeLabel}
           </span>
         </div>
 
@@ -226,7 +231,9 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
             <span className="text-[14px] font-bold text-slate-900 mt-1 truncate tabular-nums">
               {formatRupiah(totalSpent)}
             </span>
-            <span className="text-[10px] text-[#059669] font-medium mt-0.5">↓ 12% vs lalu</span>
+            <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+              {vehicleLogs.length > 0 ? `dari ${vehicleLogs.length}x pengisian` : 'belum ada data'}
+            </span>
           </div>
 
           {/* Total Konsumsi */}
@@ -248,9 +255,11 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
               Biaya/km
             </span>
             <span className="text-[14px] font-bold text-slate-900 mt-1 truncate tabular-nums">
-              Rp {averageCostPerKm}
+              Rp {averageCostPerKm.toLocaleString('id-ID')}
             </span>
-            <span className="text-[10px] text-[#059669] font-semibold mt-0.5">Sangat Hemat</span>
+            <span className="text-[10px] text-[#059669] font-semibold mt-0.5">
+              {totalDistance > 0 ? 'Sangat Hemat' : 'Isi data dulu'}
+            </span>
           </div>
         </div>
       </section>
