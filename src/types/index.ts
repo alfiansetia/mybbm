@@ -16,6 +16,8 @@ export interface Vehicle {
   primaryFuel: string;
   currentOdo: number;
   averageKmL: number;
+  /** Kapasitas tangki (liter) — tiap motor/mobil beda, dipakai validasi full tank. */
+  tankCapacityL?: number;
   isArchived?: boolean;
 }
 

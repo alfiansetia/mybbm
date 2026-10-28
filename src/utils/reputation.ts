@@ -130,12 +130,17 @@ export function getStationPinStatus(
   station: GasStation,
   selectedFuelFilter: string = 'Semua'
 ): {
-  color: 'green' | 'amber' | 'red' | 'brown';
+  color: 'green' | 'amber' | 'red' | 'brown' | 'gray';
   label: string;
   bgHex: string;
 } {
   if (station.brand === 'Toko Madura') {
     return { color: 'brown', label: 'Ready 24 Jam', bgHex: '#894d00' };
+  }
+
+  // Data peta (OSM) tanpa info stok — jangan diklaim Tersedia/Kosong.
+  if (station.fuels.length === 0) {
+    return { color: 'gray', label: 'Belum ada data', bgHex: '#64748b' };
   }
 
   let fuelsToCheck = station.fuels;

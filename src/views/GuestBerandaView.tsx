@@ -8,6 +8,8 @@ interface GuestBerandaViewProps {
   onSelectStation: (stationId: string) => void;
   onNavigateTab: (tab: 'beranda' | 'cek-spbu' | 'catat-bbm' | 'statistik' | 'akun') => void;
   onLogin: () => void;
+  /** User sudah login tapi belum punya kendaraan → CTA jadi "Tambah Kendaraan". */
+  noVehicleMode?: boolean;
 }
 
 export const GuestBerandaView: React.FC<GuestBerandaViewProps> = ({
@@ -15,20 +17,27 @@ export const GuestBerandaView: React.FC<GuestBerandaViewProps> = ({
   onSelectStation,
   onNavigateTab,
   onLogin,
+  noVehicleMode = false,
 }) => {
+  const handleSecondaryCta = () => {
+    if (noVehicleMode) onNavigateTab('akun');
+    else onLogin();
+  };
   return (
     <div className="flex flex-col w-full gap-5 pb-24 animate-in fade-in duration-150">
       {/* Hero — langsung kelihatan tanpa login */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#006194] via-[#007bb9] to-[#006a63] p-5 text-white shadow-lg shadow-[#006194]/20">
         <div className="relative z-10 flex flex-col gap-3">
           <span className="self-start text-[10px] font-extrabold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-full">
-            Tanpa daftar dulu
+            {noVehicleMode ? 'Selangkah lagi' : 'Tanpa daftar dulu'}
           </span>
           <h1 className="text-[22px] font-extrabold leading-tight font-headline">
             Cek stok BBM SPBU di sekitarmu, live.
           </h1>
           <p className="text-[13px] text-sky-100 leading-snug">
-            Lihat ketersediaan Pertalite, Pertamax, Solar & antrean POM dari laporan komunitas — gratis tanpa login.
+            {noVehicleMode
+              ? 'Tambahkan kendaraan pertamamu untuk mulai catat BBM, hitung konsumsi, dan kumpulkan reputasi.'
+              : 'Lihat ketersediaan Pertalite, Pertamax, Solar & antrean POM dari laporan komunitas — gratis tanpa login.'}
           </p>
           <div className="flex gap-2 pt-1">
             <button
@@ -40,12 +49,14 @@ export const GuestBerandaView: React.FC<GuestBerandaViewProps> = ({
               <span>Cek Stok Sekarang</span>
             </button>
             <button
-              onClick={onLogin}
+              onClick={handleSecondaryCta}
               className="flex-1 h-10 rounded-xl bg-white/15 border border-white/40 text-white text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.99] transition"
               type="button"
             >
-              <span className="material-symbols-outlined text-[18px]">login</span>
-              <span>Masuk / Daftar</span>
+              <span className="material-symbols-outlined text-[18px]">
+                {noVehicleMode ? 'two_wheeler' : 'login'}
+              </span>
+              <span>{noVehicleMode ? 'Tambah Kendaraan' : 'Masuk / Daftar'}</span>
             </button>
           </div>
         </div>
@@ -56,8 +67,8 @@ export const GuestBerandaView: React.FC<GuestBerandaViewProps> = ({
       <section className="grid grid-cols-3 gap-2">
         {[
           { icon: 'local_gas_station', label: 'Stok Live', desc: 'Bebas dilihat', tab: 'cek-spbu' as const },
-          { icon: 'edit_note', label: 'Catat BBM', desc: 'Perlu login', tab: 'catat-bbm' as const },
-          { icon: 'bar_chart', label: 'Statistik', desc: 'Perlu login', tab: 'statistik' as const },
+          { icon: 'edit_note', label: 'Catat BBM', desc: noVehicleMode ? 'Butuh kendaraan' : 'Perlu login', tab: 'catat-bbm' as const },
+          { icon: 'bar_chart', label: 'Statistik', desc: noVehicleMode ? 'Butuh kendaraan' : 'Perlu login', tab: 'statistik' as const },
         ].map((f) => (
           <button
             key={f.label}
@@ -143,20 +154,30 @@ export const GuestBerandaView: React.FC<GuestBerandaViewProps> = ({
       <section className="rounded-xl bg-gradient-to-r from-sky-50 to-teal-50 border border-sky-200/80 p-4 flex flex-col gap-2.5 shadow-sm">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-full bg-[#006194] text-white flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[20px]">group_add</span>
+            <span className="material-symbols-outlined text-[20px]">
+              {noVehicleMode ? 'two_wheeler' : 'group_add'}
+            </span>
           </div>
           <div className="flex flex-col">
-            <p className="text-[13px] font-bold text-slate-800">Mau lapor stok / verifikasi info?</p>
-            <p className="text-[11px] text-slate-600">Masuk untuk kelola kendaraan, catat BBM, dan bantu POM.</p>
+            <p className="text-[13px] font-bold text-slate-800">
+              {noVehicleMode ? 'Lengkapi garasimu dulu' : 'Mau lapor stok / verifikasi info?'}
+            </p>
+            <p className="text-[11px] text-slate-600">
+              {noVehicleMode
+                ? 'Satu kendaraan cukup untuk buka semua fitur pencatatan.'
+                : 'Masuk untuk kelola kendaraan, catat BBM, dan bantu POM.'}
+            </p>
           </div>
         </div>
         <button
-          onClick={onLogin}
+          onClick={handleSecondaryCta}
           className="w-full h-10 rounded-xl bg-[#006194] hover:bg-[#007bb9] text-white text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.99] transition"
           type="button"
         >
-          <span className="material-symbols-outlined text-[18px]">login</span>
-          <span>Masuk dengan Google</span>
+          <span className="material-symbols-outlined text-[18px]">
+            {noVehicleMode ? 'add' : 'login'}
+          </span>
+          <span>{noVehicleMode ? 'Tambah Kendaraan Sekarang' : 'Masuk dengan Google'}</span>
         </button>
       </section>
     </div>

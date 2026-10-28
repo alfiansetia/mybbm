@@ -1,13 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { Vehicle, FuelLog } from '../types';
+import { Vehicle, FuelLog, GasStation } from '../types';
 import { VehicleIcon } from '../components/VehicleIcon';
 import { BrandAvatar } from '../components/BrandAvatar';
 import { Modal } from '../components/Modal';
-import { formatKm, formatRupiah } from '../utils/format';
+import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
+import { StationPickerSheet } from '../components/StationPickerSheet';
+import { formatKm, formatRupiah, toDatetimeLocalValue, parseDateTimeInput, formatDisplayDate, formatDisplayDateTime, formatRibuan, parseRupiahInput, parseLiterInput } from '../utils/format';
+import { NON_TUNAI_OPTIONS, normalizePaymentMethod, PaymentCategory } from '../utils/payment';
 
 interface CatatBbmViewProps {
   activeVehicle: Vehicle;
   allVehicles: Vehicle[];
+  stations: GasStation[];
   initialMode?: 'scan' | 'manual';
   onSaveLog: (newLog: FuelLog) => void;
   onCancel: () => void;
@@ -16,6 +20,7 @@ interface CatatBbmViewProps {
 export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   activeVehicle,
   allVehicles,
+  stations,
   initialMode = 'scan',
   onSaveLog,
   onCancel,
@@ -28,9 +33,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
   // Form states
   const [selectedVehicleId, setSelectedVehicleId] = useState(activeVehicle.id);
-  const [stationName, setStationName] = useState('SPBU 31.12802 MT Haryono');
+  const [stationName, setStationName] = useState('');
   const [stationBrand, setStationBrand] = useState<'Pertamina' | 'Shell' | 'Vivo' | 'BP' | 'Toko Madura' | 'Lainnya'>('Pertamina');
-  const [dateTime, setDateTime] = useState('17 Okt 2026, 08:45 WIB');
+  const [isStationSheetOpen, setIsStationSheetOpen] = useState(false);
+  const [dateInput, setDateInput] = useState(() => toDatetimeLocalValue());
+  const [isDateSheetOpen, setIsDateSheetOpen] = useState(false);
   const [fuelType, setFuelType] = useState('Pertalite');
   const [previousOdo, setPreviousOdo] = useState(activeVehicle.currentOdo > 195 ? activeVehicle.currentOdo - 195 : 0);
   const [currentOdo, setCurrentOdo] = useState(activeVehicle.currentOdo || 0);
@@ -38,33 +45,55 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [liters, setLiters] = useState(3.80);
   const [pricePerLiter, setPricePerLiter] = useState(10000);
   const [totalAmount, setTotalAmount] = useState(38000);
-  const [paymentMethod, setPaymentMethod] = useState('QRIS / MyPertamina');
+  const [payCategory, setPayCategory] = useState<PaymentCategory>('Non-Tunai');
+  const [payDetail, setPayDetail] = useState<string>('QRIS');
+  /** Nilai tersimpan ke log: 'Tunai' atau 'Non-Tunai • QRIS'. */
+  const paymentMethod = payCategory === 'Tunai' ? 'Tunai' : `Non-Tunai • ${payDetail}`;
+  const applyPayment = (raw: string) => {
+    const n = normalizePaymentMethod(raw);
+    setPayCategory(n.category);
+    setPayDetail(n.detail);
+  };
   const [notes, setNotes] = useState('');
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [showOdoWarningModal, setShowOdoWarningModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentVehicle = allVehicles.find((v) => v.id === selectedVehicleId) || activeVehicle;
+  const tankCapacityL =
+    currentVehicle.tankCapacityL && currentVehicle.tankCapacityL > 0
+      ? currentVehicle.tankCapacityL
+      : currentVehicle.type === 'motor'
+        ? 5
+        : 45;
+  const litersOverCapacity = liters > tankCapacityL;
   const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
   const calculatedKmL = isFullTank && distanceKm > 0 && liters > 0 ? Number((distanceKm / liters).toFixed(1)) : undefined;
   const costPerKm = distanceKm > 0 && totalAmount > 0 ? Math.round(totalAmount / distanceKm) : undefined;
 
-  // Handle price/volume recalculations
+  // Handle price/volume recalculations (dibatasi kapasitas tangki kendaraan)
+  const maxTotalFor = (price: number) => Math.round(tankCapacityL * Math.max(0, price));
+
   const handleLitersChange = (val: number) => {
-    setLiters(val);
-    setTotalAmount(Math.round(val * pricePerLiter));
+    const clamped = Math.min(Math.max(0, val), tankCapacityL);
+    const clean = Number(clamped.toFixed(2));
+    setLiters(clean);
+    setTotalAmount(Math.round(clean * pricePerLiter));
   };
 
   const handlePricePerLiterChange = (val: number) => {
-    setPricePerLiter(val);
-    setTotalAmount(Math.round(liters * val));
+    const price = Math.max(0, val);
+    setPricePerLiter(price);
+    setTotalAmount(Math.min(Math.round(liters * price), maxTotalFor(price)));
   };
 
   const handleTotalAmountChange = (val: number) => {
-    setTotalAmount(val);
+    const clamped = Math.min(Math.max(0, val), maxTotalFor(pricePerLiter));
+    setTotalAmount(clamped);
     if (pricePerLiter > 0) {
-      setLiters(Number((val / pricePerLiter).toFixed(2)));
+      setLiters(Number((clamped / pricePerLiter).toFixed(2)));
     }
   };
 
@@ -80,7 +109,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setLiters(3.80);
         setPricePerLiter(10000);
         setTotalAmount(38000);
-        setPaymentMethod('QRIS / MyPertamina');
+        setPayCategory('Non-Tunai');
+        setPayDetail('QRIS');
         setScanConfidence(98);
       } else if (type === 'shell') {
         setStationName('Shell MT Haryono');
@@ -89,7 +119,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setLiters(3.50);
         setPricePerLiter(13500);
         setTotalAmount(47250);
-        setPaymentMethod('QRIS / GoPay');
+        setPayCategory('Non-Tunai');
+        setPayDetail('E-Wallet');
         setScanConfidence(96);
       } else {
         setStationName('SPBU 34.12803 Pancoran');
@@ -98,7 +129,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setLiters(15.0);
         setPricePerLiter(6800);
         setTotalAmount(102000);
-        setPaymentMethod('Tunai');
+        setPayCategory('Tunai');
+        setPayDetail('Tunai');
         setScanConfidence(94);
       }
       setIsScanning(false);
@@ -136,10 +168,13 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           if (d.liters != null) setLiters(Number(d.liters));
           if (d.pricePerLiter != null) setPricePerLiter(Number(d.pricePerLiter));
           if (d.totalAmount != null) setTotalAmount(Number(d.totalAmount));
-          if (d.paymentMethod) setPaymentMethod(d.paymentMethod);
+          if (d.paymentMethod) applyPayment(d.paymentMethod);
           if (d.confidence != null) setScanConfidence(Number(d.confidence));
           else setScanConfidence(null);
-          if (d.dateTime) setDateTime(d.dateTime);
+          if (d.dateTime) {
+            const parsed = parseDateTimeInput(d.dateTime);
+            if (parsed) setDateInput(toDatetimeLocalValue(parsed));
+          }
           setScanError(null);
         } else {
           // Backend jujur: AI tidak tersedia / gagal — jangan isi data palsu.
@@ -160,16 +195,39 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   };
 
   const handleSave = (bypassOdoCheck = false) => {
+    if (!stationName.trim()) {
+      setFormError('Pilih SPBU dulu — ketuk kolom Lokasi SPBU.');
+      return;
+    }
+    if (!(liters > 0)) {
+      setFormError('Isi volume BBM dulu (liter).');
+      return;
+    }
+    if (liters > tankCapacityL) {
+      setFormError(
+        `Volume ${liters} L melebihi tangki ${currentVehicle.name} (${tankCapacityL} L). Cek liternya atau ubah kapasitas di menu Akun → Garasi.`
+      );
+      return;
+    }
+    if (totalAmount > Math.round(tankCapacityL * pricePerLiter)) {
+      setFormError(
+        `Total ${formatRupiah(totalAmount)} melebihi batas ${formatRupiah(tankCapacityL * pricePerLiter)} (${tankCapacityL} L × ${formatRupiah(pricePerLiter)}/L).`
+      );
+      return;
+    }
+    setFormError(null);
     if (!bypassOdoCheck && currentOdo < previousOdo) {
       setShowOdoWarningModal(true);
       return;
     }
 
+    const logDate = parseDateTimeInput(dateInput) ?? new Date();
+
     const newLog: FuelLog = {
       id: `log-${Date.now()}`,
       vehicleId: selectedVehicleId,
-      dateTime: new Date().toISOString(),
-      displayDate: '17 Okt 2026',
+      dateTime: logDate.toISOString(),
+      displayDate: formatDisplayDate(logDate),
       stationName,
       stationBrand,
       fuelType,
@@ -423,16 +481,20 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
             <label className="text-xs font-bold text-slate-700 block mb-1">
               Tanggal & Waktu Pengisian
             </label>
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsDateSheetOpen(true)}
+              className="w-full flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-slate-800 text-left active:scale-[0.99] transition-transform"
+            >
               <span className="material-symbols-outlined text-[18px] text-[#006194]">calendar_today</span>
-              <input
-                type="text"
-                value={dateTime}
-                onChange={(e) => setDateTime(e.target.value)}
-                className="w-full bg-transparent text-xs font-semibold focus:outline-none"
-              />
-              <span className="material-symbols-outlined text-[16px] text-[#006a63]">verified</span>
-            </div>
+              <span className="flex-1 text-xs font-semibold">
+                {(() => {
+                  const d = parseDateTimeInput(dateInput);
+                  return d ? formatDisplayDateTime(d) : 'Pilih tanggal & jam';
+                })()}
+              </span>
+              <span className="material-symbols-outlined text-[16px] text-slate-400">expand_more</span>
+            </button>
           </div>
 
           {/* SPBU Location */}
@@ -443,18 +505,46 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 <span className="material-symbols-outlined text-[13px]">near_me</span> GPS Cocok
               </span>
             </div>
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setIsStationSheetOpen(true)}
+              className="w-full flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-left active:scale-[0.99] transition-transform"
+            >
               <BrandAvatar brand={stationBrand} size="sm" />
-              <input
-                type="text"
-                value={stationName}
-                onChange={(e) => setStationName(e.target.value)}
-                placeholder="Nama atau Alamat SPBU"
-                className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-none"
-              />
-            </div>
+              <span className={`flex-1 min-w-0 truncate text-xs ${stationName ? 'font-bold text-slate-900' : 'text-slate-400'}`}>
+                {stationName || 'Pilih SPBU terdekat…'}
+              </span>
+              <span className="material-symbols-outlined text-[16px] text-slate-400">expand_more</span>
+            </button>
           </div>
         </div>
+
+        {/* Sheet pilih SPBU */}
+        {isStationSheetOpen && (
+          <StationPickerSheet
+            stations={stations}
+            onPick={(st) => {
+              setStationName(st.name);
+              setStationBrand(st.brand);
+              setFormError(null);
+              setIsStationSheetOpen(false);
+            }}
+            onClose={() => setIsStationSheetOpen(false)}
+          />
+        )}
+
+        {/* Sheet pilih tanggal & jam */}
+        {isDateSheetOpen && (
+          <DateTimePickerSheet
+            initial={parseDateTimeInput(dateInput) ?? new Date()}
+            max={new Date()}
+            onPick={(d) => {
+              setDateInput(toDatetimeLocalValue(d));
+              setIsDateSheetOpen(false);
+            }}
+            onClose={() => setIsDateSheetOpen(false)}
+          />
+        )}
 
         {/* Jenis Bahan Bakar Selector */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2">
@@ -562,27 +652,46 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         {/* Volume, Harga & Total Pembayaran */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2.5">
           <div className="grid grid-cols-2 gap-2.5">
-            <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">Volume BBM</span>
+            <div className={`border p-2.5 rounded-lg ${litersOverCapacity ? 'bg-red-50 border-red-300' : 'bg-slate-50 border-slate-200'}`}>
+              <span className="text-[10px] font-bold text-slate-500 flex items-center justify-between mb-1">
+                <span>Volume BBM</span>
+                <span className="text-[#006194]">⛽ {tankCapacityL} L</span>
+              </span>
               <div className="flex items-baseline justify-between">
                 <input
-                  type="number"
-                  step="0.01"
-                  value={liters}
-                  onChange={(e) => handleLitersChange(Number(e.target.value))}
+                  type="text"
+                  inputMode="decimal"
+                  value={liters === 0 ? '' : String(liters)}
+                  placeholder="0"
+                  onChange={(e) => handleLitersChange(parseLiterInput(e.target.value))}
                   className="w-full bg-transparent text-base font-extrabold text-slate-900 tabular-nums focus:outline-none"
                 />
                 <span className="text-xs font-bold text-slate-400">Liter</span>
               </div>
+              {isFullTank ? (
+                <button
+                  type="button"
+                  onClick={() => handleLitersChange(tankCapacityL)}
+                  className="mt-1 text-[10px] font-bold text-[#006a63] underline"
+                >
+                  Samakan full tank ({tankCapacityL} L)
+                </button>
+              ) : litersOverCapacity ? (
+                <p className="mt-1 text-[10px] font-bold text-red-600">
+                  Melebihi tangki {currentVehicle.name} ({tankCapacityL} L)
+                </p>
+              ) : null}
             </div>
 
             <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
               <span className="text-[10px] font-bold text-slate-500 block mb-1">Harga per Liter</span>
               <div className="flex items-baseline justify-between">
                 <input
-                  type="number"
-                  value={pricePerLiter}
-                  onChange={(e) => handlePricePerLiterChange(Number(e.target.value))}
+                  type="text"
+                  inputMode="numeric"
+                  value={formatRibuan(pricePerLiter)}
+                  placeholder="0"
+                  onChange={(e) => handlePricePerLiterChange(parseRupiahInput(e.target.value))}
                   className="w-full bg-transparent text-base font-extrabold text-slate-900 tabular-nums focus:outline-none"
                 />
                 <span className="text-[10px] font-bold text-slate-400">Rp/L</span>
@@ -591,29 +700,83 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           </div>
 
           {/* Total Bayar Box */}
-          <div className="bg-slate-100 border border-slate-200/90 p-3 rounded-lg flex items-center justify-between">
-            <div>
+          <div className="bg-slate-100 border border-slate-200/90 p-3 rounded-lg">
+            <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 Total Pembayaran
               </span>
-              <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-sm font-bold text-[#006194]">Rp</span>
-                <input
-                  type="number"
-                  value={totalAmount}
-                  onChange={(e) => handleTotalAmountChange(Number(e.target.value))}
-                  className="w-32 bg-transparent text-lg font-extrabold text-[#006194] tabular-nums focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="text-right">
-              <span className="text-[10px] font-bold text-slate-500 block">Metode Pembayaran</span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 shadow-xs mt-0.5">
-                <span className="material-symbols-outlined text-[13px] text-[#ee2737]">qr_code_2</span>
-                <span>{paymentMethod}</span>
+              <span className="text-[10px] font-bold text-slate-400 tabular-nums">
+                Maks {formatRupiah(tankCapacityL * pricePerLiter)}
               </span>
             </div>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-sm font-bold text-[#006194]">Rp</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={formatRibuan(totalAmount)}
+                placeholder="0"
+                onChange={(e) => handleTotalAmountChange(parseRupiahInput(e.target.value))}
+                className="w-full bg-transparent text-lg font-extrabold text-[#006194] tabular-nums focus:outline-none"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+              {tankCapacityL} L × {formatRupiah(pricePerLiter)}/L — tidak bisa lebih dari kapasitas {currentVehicle.name}
+            </p>
+          </div>
+
+          {/* Metode Pembayaran: Tunai vs Non-Tunai */}
+          <div className="bg-white border border-slate-200/90 p-3 rounded-lg">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Metode Pembayaran
+            </span>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              <button
+                type="button"
+                onClick={() => setPayCategory('Tunai')}
+                className={`h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 border transition-all active:scale-[0.98] ${
+                  payCategory === 'Tunai'
+                    ? 'bg-[#006a63] text-white border-[#006a63] shadow'
+                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[17px]">payments</span>
+                <span>Tunai</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPayCategory('Non-Tunai');
+                  if (payDetail === 'Tunai') setPayDetail('QRIS');
+                }}
+                className={`h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 border transition-all active:scale-[0.98] ${
+                  payCategory === 'Non-Tunai'
+                    ? 'bg-[#006194] text-white border-[#006194] shadow'
+                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[17px]">qr_code_2</span>
+                <span>Non-Tunai</span>
+              </button>
+            </div>
+            {payCategory === 'Non-Tunai' && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {NON_TUNAI_OPTIONS.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setPayDetail(opt)}
+                    className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-95 ${
+                      payDetail === opt
+                        ? 'bg-sky-100 text-[#006194] border-[#006194]'
+                        : 'bg-slate-50 text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -644,6 +807,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
         {/* Action Buttons */}
         <div className="space-y-2 pt-1">
+          {formError && (
+            <p className="text-[11px] text-red-600 font-semibold bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {formError}
+            </p>
+          )}
           <button
             onClick={() => handleSave(false)}
             disabled={isSavedSuccess}

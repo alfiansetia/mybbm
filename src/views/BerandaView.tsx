@@ -6,6 +6,7 @@ import { VehicleIcon } from '../components/VehicleIcon';
 import { BrandAvatar, brandDotClass } from '../components/BrandAvatar';
 import { QueuePill, StatusDot } from '../components/StatusPill';
 import { formatRupiah, formatKm, formatRentangBulanBerjalan } from '../utils/format';
+import { paymentCategoryOf } from '../utils/payment';
 
 interface BerandaViewProps {
   activeVehicle: Vehicle;
@@ -46,6 +47,13 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   const totalLiters = vehicleLogs.reduce((acc, curr) => acc + curr.liters, 0);
   const totalDistance = vehicleLogs.reduce((acc, curr) => acc + (curr.distanceKm || 0), 0);
   const averageCostPerKm = totalDistance > 0 ? Math.round(totalSpent / totalDistance) : 0;
+
+  // Pecahan Tunai vs Non-Tunai (ngaruh dari pilihan metode saat catat)
+  const cashSpent = vehicleLogs
+    .filter((l) => paymentCategoryOf(l.paymentMethod) === 'Tunai')
+    .reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const cashlessSpent = totalSpent - cashSpent;
+  const cashlessPct = totalSpent > 0 ? Math.round((cashlessSpent / totalSpent) * 100) : 0;
 
   // Rentang tanggal bulan berjalan (dinamis, bukan hardcode)
   const monthRangeLabel = formatRentangBulanBerjalan();
@@ -256,6 +264,32 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Pecahan metode pembayaran */}
+        {vehicleLogs.length > 0 && (
+          <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-sm">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-500 font-medium flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px] text-[#006a63]">payments</span>
+                Tunai · {formatRupiah(cashSpent)}
+              </span>
+              <span className="text-slate-500 font-medium flex items-center gap-1">
+                Non-Tunai · {formatRupiah(cashlessSpent)}
+                <span className="material-symbols-outlined text-[14px] text-[#006194]">qr_code_2</span>
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-teal-100 overflow-hidden flex">
+              <div
+                className="h-full bg-[#006a63] transition-all"
+                style={{ width: `${100 - cashlessPct}%` }}
+              />
+              <div
+                className="h-full bg-[#006194] transition-all"
+                style={{ width: `${cashlessPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       {/* 4. Radar SPBU & Stok Live (Preview Cards) */}

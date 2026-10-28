@@ -5,6 +5,7 @@ import { ReputationBadge } from '../components/ReputationBadge';
 import { VehicleIcon } from '../components/VehicleIcon';
 import { Modal } from '../components/Modal';
 import { Toast } from '../components/Toast';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import { formatKm } from '../utils/format';
 
 interface AkunViewProps {
@@ -16,6 +17,8 @@ interface AkunViewProps {
   onLogoutGoogle?: () => void;
   onSelectVehicle: (id: string) => void;
   onAddVehicle: (newVehicle: Omit<Vehicle, 'id'>) => void;
+  onUpdateVehicle: (vehicle: Vehicle) => void;
+  onDeleteVehicle: (id: string) => void;
   onResetData: () => void;
 }
 
@@ -28,42 +31,132 @@ export const AkunView: React.FC<AkunViewProps> = ({
   onLogoutGoogle,
   onSelectVehicle,
   onAddVehicle,
+  onUpdateVehicle,
+  onDeleteVehicle,
   onResetData,
 }) => {
   const [isAddVehicleOpen, setIsAddVehicleOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [newVehName, setNewVehName] = useState('');
   const [newVehType, setNewVehType] = useState<'motor' | 'mobil'>('motor');
   const [newVehBrand, setNewVehBrand] = useState('Honda');
   const [newVehModel, setNewVehModel] = useState('');
   const [newVehYear, setNewVehYear] = useState(2024);
-  const [newVehPlate, setNewVehPlate] = useState('');
+  const [plateHead, setPlateHead] = useState('B');
+  const [plateNum, setPlateNum] = useState('');
+  const [plateTail, setPlateTail] = useState('');
+  const [plateError, setPlateError] = useState<string | null>(null);
+
+  const onlyLetters = (v: string, max: number) =>
+    v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, max);
+  const onlyDigits = (v: string, max: number) =>
+    v.replace(/[^0-9]/g, '').slice(0, max);
+
+  /** Plat Indonesia: 1–2 huruf wilayah, 1–4 digit angka, 1–3 huruf seri. */
+  const isValidPlate = (head: string, num: string, tail: string) =>
+    /^[A-Z]{1,2}$/.test(head) && /^[0-9]{1,4}$/.test(num) && /^[A-Z]{1,3}$/.test(tail);
+
+  const combinedPlate = `${plateHead} ${plateNum} ${plateTail}`.trim().replace(/\s+/g, ' ');
   const [newVehFuel, setNewVehFuel] = useState('Pertalite');
   const [newVehOdo, setNewVehOdo] = useState(1000);
+  const [newVehTank, setNewVehTank] = useState(5);
+
+  /** Default kapasitas tangki bila user belum isi (motor 5 L, mobil 45 L). */
+  const tankOrDefault = (v: Vehicle) =>
+    v.tankCapacityL && v.tankCapacityL > 0 ? v.tankCapacityL : v.type === 'motor' ? 5 : 45;
+
+  /** Pecah plat tersimpan (termasuk format bebas lama) ke 3 segmen form. */
+  const parsePlate = (plate: string): [string, string, string] => {
+    const m = plate.toUpperCase().match(/^([A-Z]{1,2})\s*([0-9]{1,5})\s*([A-Z]{0,3})$/);
+    if (m) return [m[1], m[2].slice(0, 4), m[3]];
+    return ['B', plate.replace(/[^0-9]/g, '').slice(0, 4), ''];
+  };
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setNewVehName('');
+    setPlateHead('B');
+    setPlateNum('');
+    setPlateTail('');
+    setPlateError(null);
+    setNewVehModel('');
+    setNewVehTank(5);
+    setIsAddVehicleOpen(true);
+  };
+
+  const openEditModal = (v: Vehicle) => {
+    const [head, num, tail] = parsePlate(v.plateNumber);
+    setEditingId(v.id);
+    setNewVehName(v.name);
+    setNewVehType(v.type);
+    setNewVehBrand(v.brand);
+    setNewVehModel(v.model);
+    setNewVehYear(v.year);
+    setPlateHead(head);
+    setPlateNum(num);
+    setPlateTail(tail);
+    setPlateError(null);
+    setNewVehFuel(v.primaryFuel);
+    setNewVehOdo(v.currentOdo);
+    setNewVehTank(v.tankCapacityL ?? (v.type === 'motor' ? 5 : 45));
+    setIsAddVehicleOpen(true);
+  };
 
   const tier = getReputationTier(userProfile.credibilityScore);
 
   const handleSubmitNewVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newVehName) return;
+    if (!isValidPlate(plateHead, plateNum, plateTail)) {
+      setPlateError('Format plat: 1–2 huruf, 1–4 angka, 1–3 huruf (cth: B 1234 XYZ).');
+      return;
+    }
+    setPlateError(null);
 
-    onAddVehicle({
-      name: newVehName,
-      type: newVehType,
-      brand: newVehBrand,
-      model: newVehModel || newVehName,
-      year: Number(newVehYear) || 2024,
-      plateNumber: newVehPlate || 'B 1234 XYZ',
-      primaryFuel: newVehFuel,
-      currentOdo: Number(newVehOdo) || 0,
-      averageKmL: newVehType === 'motor' ? 45.0 : 13.5,
-    });
+    if (editingId) {
+      const existing = vehicles.find((v) => v.id === editingId);
+      onUpdateVehicle({
+        ...(existing as Vehicle),
+        name: newVehName,
+        type: newVehType,
+        brand: newVehBrand,
+        model: newVehModel || newVehName,
+        year: Number(newVehYear) || 2024,
+        plateNumber: combinedPlate,
+        primaryFuel: newVehFuel,
+        currentOdo: Number(newVehOdo) || 0,
+        tankCapacityL: Number(newVehTank) || undefined,
+      });
+      setToastMessage('Kendaraan diperbarui.');
+    } else {
+      onAddVehicle({
+        name: newVehName,
+        type: newVehType,
+        brand: newVehBrand,
+        model: newVehModel || newVehName,
+        year: Number(newVehYear) || 2024,
+        plateNumber: combinedPlate,
+        primaryFuel: newVehFuel,
+        currentOdo: Number(newVehOdo) || 0,
+        averageKmL: newVehType === 'motor' ? 45.0 : 13.5,
+        tankCapacityL: Number(newVehTank) || undefined,
+      });
+      setToastMessage('Kendaraan ditambahkan.');
+    }
 
     setIsAddVehicleOpen(false);
+    setEditingId(null);
     setNewVehName('');
-    setNewVehPlate('');
+    setPlateHead('B');
+    setPlateNum('');
+    setPlateTail('');
+    setPlateError(null);
     setNewVehModel('');
+    setNewVehTank(5);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   return (
@@ -71,12 +164,8 @@ export const AkunView: React.FC<AkunViewProps> = ({
       {/* 1. Profile Header Card */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-14 h-14 rounded-full ring-3 ring-[#006194]/20 overflow-hidden shrink-0 bg-slate-200">
-            <img
-              src={userProfile.avatar}
-              alt={userProfile.name}
-              className="w-full h-full object-cover"
-            />
+          <div className="w-14 h-14 rounded-full ring-3 ring-[#006194]/20 overflow-hidden shrink-0">
+            <ProfileAvatar name={userProfile.name} src={userProfile.avatar} size="md" />
           </div>
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -182,7 +271,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
             <h3 className="text-sm font-bold text-slate-900 font-headline">Garasi Kendaraan ({vehicles.length})</h3>
           </div>
           <button
-            onClick={() => setIsAddVehicleOpen(true)}
+            onClick={openAddModal}
             className="text-xs font-bold text-[#006194] bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-200 flex items-center gap-1 hover:bg-sky-100"
             type="button"
           >
@@ -222,7 +311,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
                       )}
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      {v.plateNumber} • Odo: {formatKm(v.currentOdo)} • {v.averageKmL} km/L
+                      {v.plateNumber} • Odo: {formatKm(v.currentOdo)} • Tangki {tankOrDefault(v)} L • {v.averageKmL} km/L
                     </p>
                   </div>
                 </div>
@@ -237,6 +326,30 @@ export const AkunView: React.FC<AkunViewProps> = ({
                       Pilih
                     </span>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(v);
+                    }}
+                    title={`Ubah ${v.name}`}
+                    aria-label={`Ubah ${v.name}`}
+                    type="button"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-[#006194] hover:bg-sky-50 active:scale-95 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingDeleteId(v.id);
+                    }}
+                    title={`Hapus ${v.name}`}
+                    aria-label={`Hapus ${v.name}`}
+                    type="button"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 active:scale-95 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
                 </div>
               </div>
             );
@@ -310,12 +423,12 @@ export const AkunView: React.FC<AkunViewProps> = ({
         </div>
       </div>
 
-      {/* Modal Tambah Kendaraan */}
+      {/* Modal Tambah / Ubah Kendaraan */}
       {isAddVehicleOpen && (
         <Modal
-          icon="two_wheeler"
-          title="Tambah Kendaraan Baru"
-          subtitle="Lengkapi data kendaraanmu"
+          icon={editingId ? 'edit' : 'two_wheeler'}
+          title={editingId ? 'Ubah Kendaraan' : 'Tambah Kendaraan Baru'}
+          subtitle={editingId ? 'Perbarui data kendaraanmu' : 'Lengkapi data kendaraanmu'}
           onClose={() => setIsAddVehicleOpen(false)}
         >
           <form onSubmit={handleSubmitNewVehicle} className="space-y-3">
@@ -324,7 +437,10 @@ export const AkunView: React.FC<AkunViewProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setNewVehType('motor')}
+                    onClick={() => {
+                      setNewVehType('motor');
+                      setNewVehTank((prev) => (prev === 45 ? 5 : prev));
+                    }}
                     className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border ${
                       newVehType === 'motor' ? 'bg-[#006194] text-white border-[#006194]' : 'bg-slate-50 text-slate-700 border-slate-200'
                     }`}
@@ -334,7 +450,10 @@ export const AkunView: React.FC<AkunViewProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNewVehType('mobil')}
+                    onClick={() => {
+                      setNewVehType('mobil');
+                      setNewVehTank((prev) => (prev === 5 ? 45 : prev));
+                    }}
                     className={`p-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border ${
                       newVehType === 'mobil' ? 'bg-[#006194] text-white border-[#006194]' : 'bg-slate-50 text-slate-700 border-slate-200'
                     }`}
@@ -358,15 +477,51 @@ export const AkunView: React.FC<AkunViewProps> = ({
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <div>
+                <div className="col-span-2">
                   <label className="text-xs font-bold text-slate-700 block mb-1">Nomor Polisi</label>
-                  <input
-                    type="text"
-                    placeholder="Cth: B 3456 ABC"
-                    value={newVehPlate}
-                    onChange={(e) => setNewVehPlate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#006194]"
-                  />
+                  {/* Input plat tersegmen ala plat asli: wilayah • angka • seri */}
+                  <div
+                    className={`flex items-stretch gap-1.5 bg-slate-900 rounded-xl p-1.5 border-2 transition-colors ${
+                      plateError ? 'border-red-500' : 'border-slate-900 focus-within:border-[#006194]'
+                    }`}
+                  >
+                    <input
+                      value={plateHead}
+                      onChange={(e) => setPlateHead(onlyLetters(e.target.value, 2))}
+                      placeholder="B"
+                      maxLength={2}
+                      aria-label="Kode wilayah"
+                      className="w-14 bg-white/10 text-white text-center text-sm font-extrabold tracking-widest rounded-lg py-2 uppercase placeholder:text-slate-500 focus:outline-none focus:bg-white/20"
+                    />
+                    <input
+                      value={plateNum}
+                      onChange={(e) => setPlateNum(onlyDigits(e.target.value, 4))}
+                      placeholder="1234"
+                      maxLength={4}
+                      inputMode="numeric"
+                      aria-label="Nomor (maks 4 digit)"
+                      className="flex-1 min-w-0 bg-white text-slate-900 text-center text-sm font-extrabold tracking-[0.2em] rounded-lg py-2 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#006194]"
+                    />
+                    <input
+                      value={plateTail}
+                      onChange={(e) => setPlateTail(onlyLetters(e.target.value, 3))}
+                      placeholder="XYZ"
+                      maxLength={3}
+                      aria-label="Kode seri"
+                      className="w-20 bg-white/10 text-white text-center text-sm font-extrabold tracking-widest rounded-lg py-2 uppercase placeholder:text-slate-500 focus:outline-none focus:bg-white/20"
+                    />
+                  </div>
+                  {plateError ? (
+                    <p className="text-[11px] text-red-600 font-semibold mt-1">{plateError}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {combinedPlate.trim() ? (
+                        <>Pratinjau: <span className="font-bold text-slate-600">{combinedPlate}</span></>
+                      ) : (
+                        'Cth: B 1234 XYZ — angka maksimal 4 digit.'
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Tahun</label>
@@ -390,6 +545,18 @@ export const AkunView: React.FC<AkunViewProps> = ({
                   />
                 </div>
                 <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Kapasitas Tangki (L)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0.5}
+                    placeholder={newVehType === 'motor' ? 'Cth: 5.5' : 'Cth: 45'}
+                    value={newVehTank}
+                    onChange={(e) => setNewVehTank(Number(e.target.value))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#006194]"
+                  />
+                </div>
+                <div className="col-span-2">
                   <label className="text-xs font-bold text-slate-700 block mb-1">BBM Utama</label>
                   <select
                     value={newVehFuel}
@@ -416,7 +583,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
                   type="submit"
                   className="flex-1 py-2 rounded-lg bg-[#006194] text-white text-xs font-bold shadow"
                 >
-                  Simpan Kendaraan
+                  {editingId ? 'Simpan Perubahan' : 'Simpan Kendaraan'}
                 </button>
               </div>
           </form>
@@ -466,6 +633,40 @@ export const AkunView: React.FC<AkunViewProps> = ({
                 Ya, Reset Sekarang
               </button>
             </div>
+        </Modal>
+      )}
+
+      {/* Modal Konfirmasi Hapus Satu Kendaraan */}
+      {pendingDeleteId && (
+        <Modal
+          icon="delete"
+          iconBg="bg-red-100"
+          iconColor="text-red-600"
+          title={`Hapus ${vehicles.find((v) => v.id === pendingDeleteId)?.name || 'kendaraan'}?`}
+          subtitle="Riwayat BBM kendaraan ini ikut terhapus permanen"
+          onClose={() => setPendingDeleteId(null)}
+        >
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingDeleteId(null)}
+              className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteVehicle(pendingDeleteId);
+                setPendingDeleteId(null);
+                setToastMessage('Kendaraan dihapus.');
+                setTimeout(() => setToastMessage(null), 3000);
+              }}
+              className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs transition-colors"
+            >
+              Ya, Hapus
+            </button>
+          </div>
         </Modal>
       )}
 

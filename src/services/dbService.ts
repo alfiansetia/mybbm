@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc,
@@ -11,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Vehicle, GasStation, FuelLog, UserProfile } from '../types';
-import { initialStations } from '../data/seedData';
+import { LEGACY_DUMMY_STATION_IDS } from '../data/seedData';
 
 const STATIONS_COLLECTION = 'stations';
 const VEHICLES_COLLECTION = 'vehicles';
@@ -19,8 +20,17 @@ const LOGS_COLLECTION = 'fuel_logs';
 const USERS_COLLECTION = 'users';
 
 /**
+ * Firestore menolak field `undefined` (mis. notes opsional laporan).
+ * Bersihkan via JSON round-trip: undefined hilang, null/tanggal-string aman.
+ */
+function stripUndefined<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
  * Real-time subscription to Gas Stations.
- * Seeds initial stations to Firestore if the collection is empty.
+ * Koleksi kosong = tetap kosong (tidak ada seed dummy lagi).
+ * Dokumen dummy warisan ikut disaring agar tidak tampil di mana pun.
  * Selalu return unsubscribe function (noop kalau gagal init).
  */
 export function subscribeStations(onUpdate: (stations: GasStation[]) => void): () => void {
@@ -31,21 +41,14 @@ export function subscribeStations(onUpdate: (stations: GasStation[]) => void): (
       colRef,
       async (snapshot) => {
         if (snapshot.empty) {
-          // Auto-seed initial stations into Firestore
-          try {
-            for (const st of initialStations) {
-              await setDoc(doc(db, STATIONS_COLLECTION, st.id), st);
-            }
-          } catch (seedErr) {
-            console.warn('Initial stations seeding notice:', seedErr);
-          }
-          onUpdate(initialStations);
+          onUpdate([]);
           return;
         }
 
         const items: GasStation[] = [];
         snapshot.forEach((d) => {
-          items.push(d.data() as GasStation);
+          const st = d.data() as GasStation;
+          if (!LEGACY_DUMMY_STATION_IDS.includes(st.id)) items.push(st);
         });
         onUpdate(items);
       },
@@ -67,10 +70,41 @@ export function subscribeStations(onUpdate: (stations: GasStation[]) => void): (
 export async function updateStationInDb(station: GasStation): Promise<void> {
   const path = `${STATIONS_COLLECTION}/${station.id}`;
   try {
-    await setDoc(doc(db, STATIONS_COLLECTION, station.id), station, { merge: true });
+    await setDoc(doc(db, STATIONS_COLLECTION, station.id), stripUndefined(station), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
+}
+
+/**
+ * Cache hasil peta (OSM) ke Firestore agar user lain langsung dapat tanpa fetch ulang.
+ * Keamanan: hanya CREATE doc yang belum ada (cek getDoc dulu, setDoc tanpa merge).
+ * Tidak pernah menimpa data komunitas/laporan yang sudah ada.
+ * Dirancang fire-and-forget (jalan di background, tidak memblokir UI).
+ */
+export async function saveOsmStationsToDb(
+  stations: GasStation[]
+): Promise<{ savedIds: string[]; skipped: number }> {
+  const savedIds: string[] = [];
+  let skipped = 0;
+  const CONCURRENCY = 5;
+  for (let i = 0; i < stations.length; i += CONCURRENCY) {
+    const chunk = stations.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map(async (st) => {
+        const ref = doc(db, STATIONS_COLLECTION, st.id);
+        const snap = await getDoc(ref);
+        if (snap.exists()) return false;
+        await setDoc(ref, stripUndefined(st));
+        return true;
+      })
+    );
+    results.forEach((r, idx) => {
+      if (r.status === 'fulfilled' && r.value) savedIds.push(chunk[idx].id);
+      else skipped += 1;
+    });
+  }
+  return { savedIds, skipped };
 }
 
 /**

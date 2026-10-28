@@ -1,9 +1,75 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { GasStation } from '../types';
 import { StationMap } from '../components/StationMap';
 import { BrandAvatar } from '../components/BrandAvatar';
 import { getStationPinStatus } from '../utils/reputation';
 import { formatRupiah } from '../utils/format';
+import { useUserLocation } from '../hooks/useUserLocation';
+import { haversineKm, roundDistanceKm } from '../utils/geo';
+import { fetchMapStations, mergeCommunityWithMap, MapSource } from '../services/nearbyStations';
+import { saveOsmStationsToDb } from '../services/dbService';
+
+interface CekSpbuViewProps {
+  stations: GasStation[];
+  onSelectStation: (stationId: string) => void;
+  onOpenReportModal: (stationId?: string) => void;
+  /** Naikkan SPBU hasil peta (OSM) ke App agar bisa dibuka detailnya. */
+  onNearbyUpdate?: (stations: GasStation[]) => void;
+  /** True bila user login — syarat Firestore rules untuk menyimpan cache OSM. */
+  canContribute?: boolean;
+}
+
+const OSM_CACHE_KEY = 'mybbm_map_cache';
+const OSM_SYNCED_KEY = 'mybbm_osm_synced_ids';
+const OSM_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 jam
+const OSM_SYNC_MAX = 25; // batasi write per lokasi agar hemat kuota
+
+function readMapCache(source: MapSource, cacheKey: string): GasStation[] | null {
+  try {
+    const raw = localStorage.getItem(OSM_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, { ts: number; stations: GasStation[] }>;
+    const entry = parsed[`${source}|${cacheKey}`];
+    if (!entry || Date.now() - entry.ts > OSM_CACHE_TTL_MS) return null;
+    return entry.stations;
+  } catch {
+    return null;
+  }
+}
+
+function writeMapCache(source: MapSource, cacheKey: string, stations: GasStation[]) {
+  try {
+    const raw = localStorage.getItem(OSM_CACHE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, { ts: number; stations: GasStation[] }>) : {};
+    parsed[`${source}|${cacheKey}`] = { ts: Date.now(), stations };
+    // Batasi 20 sel cache agar tidak membengkak
+    const keys = Object.keys(parsed);
+    if (keys.length > 20) {
+      const oldest = keys.sort((a, b) => parsed[a].ts - parsed[b].ts)[0];
+      delete parsed[oldest];
+    }
+    localStorage.setItem(OSM_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // storage penuh — abaikan, fetch ulang lain waktu
+  }
+}
+
+function loadSyncedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(OSM_SYNCED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+interface CekSpbuViewProps {
+  stations: GasStation[];
+  onSelectStation: (stationId: string) => void;
+  onOpenReportModal: (stationId?: string) => void;
+  /** Naikkan SPBU hasil peta (OSM) ke App agar bisa dibuka detailnya. */
+  onNearbyUpdate?: (stations: GasStation[]) => void;
+}
 
 interface CekSpbuViewProps {
   stations: GasStation[];
@@ -26,17 +92,153 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
   stations,
   onSelectStation,
   onOpenReportModal,
+  onNearbyUpdate,
+  canContribute = false,
 }) => {
   const [selectedFilter, setSelectedFilter] = useState('Semua');
   const [radiusIndex, setRadiusIndex] = useState(1); // default 3 km
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStationId, setActiveStationId] = useState<string | null>(null);
+  const [showAllOutsideRadius, setShowAllOutsideRadius] = useState(false);
+  const [showUnknownStock, setShowUnknownStock] = useState(false);
+  const [osmStations, setOsmStations] = useState<GasStation[]>([]);
+  const [osmStatus, setOsmStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [mapSource, setMapSource] = useState<MapSource>('google');
+  const [osmSync, setOsmSync] = useState<{ phase: 'idle' | 'saving' | 'done'; saved: number }>({ phase: 'idle', saved: 0 });
+  const syncedIds = React.useRef<Set<string> | null>(null);
+  const { coords: userCoords, accuracyM, label: locationLabel, status: locStatus, error: locError, isFallback, requestLocation } =
+    useUserLocation(true);
 
   const radius = RADII[radiusIndex];
+  const locating = locStatus === 'loading';
 
-  // Filter stations based on search query, radius, and fuel filter
-  const filteredStations = stations.filter((station) => {
-    // Search query filter
+  // Ambil SPBU beneran di sekitar GPS: Google Places dulu (cepat), gagal → OSM (gratis).
+  // Strategi stale-while-revalidate: tampilkan cache lokal dulu, fetch segar di background.
+  useEffect(() => {
+    if (locStatus !== 'success') return;
+    const maxRadius = parseInt(RADII[radiusIndex], 10);
+    // Fetch = radius tampilan persis (luas area ~ r²; 2x radius = 4x data = jauh lebih lambat).
+    const fetchRadiusM = Math.min(10000, Math.max(1000, maxRadius * 1000));
+    const cacheKey = `${userCoords[0].toFixed(3)},${userCoords[1].toFixed(3)},r${maxRadius}`;
+    const apiKey =
+      import.meta.env.VITE_GOOGLE_PLACES_API_KEY ||
+      import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+      '';
+
+    const googleCached = readMapCache('google', cacheKey);
+    const osmCached = readMapCache('osm', cacheKey);
+    const initial = googleCached?.length ? { src: 'google' as MapSource, list: googleCached }
+      : osmCached?.length ? { src: 'osm' as MapSource, list: osmCached }
+      : null;
+    const hadCache = !!initial;
+    if (initial) {
+      setOsmStations(initial.list);
+      setMapSource(initial.src);
+      setOsmStatus('success');
+    } else {
+      setOsmStatus('loading');
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      fetchMapStations({
+        lat: userCoords[0],
+        lng: userCoords[1],
+        radiusM: fetchRadiusM,
+        placesApiKey: apiKey || undefined,
+        signal: ctrl.signal,
+      })
+        .then(({ stations: list, source }) => {
+          if (ctrl.signal.aborted) return;
+          setOsmStations(list);
+          setMapSource(source);
+          setOsmStatus('success');
+          writeMapCache(source, cacheKey, list);
+        })
+        .catch((err) => {
+          if (ctrl.signal.aborted) return;
+          console.warn('[Peta] fetch SPBU gagal, pakai data komunitas:', err);
+          // Cache basi tetap lebih baik daripada kosong.
+          if (!hadCache) setOsmStatus('error');
+        });
+    }, hadCache ? 1500 : 600);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locStatus, radiusIndex, `${userCoords[0].toFixed(3)},${userCoords[1].toFixed(3)}`]);
+
+  // Simpan SPBU peta yang baru ke Firestore di background (hanya saat login,
+  // sesuai rules). User lain langsung menerimanya via snapshot — tanpa fetch ulang.
+  useEffect(() => {
+    if (!canContribute || osmStations.length === 0) return;
+    if (syncedIds.current === null) syncedIds.current = loadSyncedIds();
+    const communityIds = new Set(stations.map((s) => s.id));
+    const candidates = osmStations.filter(
+      (s) =>
+        (s.id.startsWith('osm-') || s.id.startsWith('gplaces-')) &&
+        !communityIds.has(s.id) &&
+        !syncedIds.current!.has(s.id)
+    );
+    if (candidates.length === 0) return;
+    const batch = candidates.slice(0, OSM_SYNC_MAX);
+    setOsmSync({ phase: 'saving', saved: 0 });
+    let cancelled = false;
+    saveOsmStationsToDb(batch)
+      .then(({ savedIds }) => {
+        if (cancelled) return;
+        if (syncedIds.current === null) syncedIds.current = new Set();
+        savedIds.forEach((id) => syncedIds.current!.add(id));
+        try {
+          localStorage.setItem(OSM_SYNCED_KEY, JSON.stringify([...syncedIds.current].slice(-500)));
+        } catch {
+          // abaikan
+        }
+        setOsmSync({ phase: 'done', saved: savedIds.length });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn('[OSM] sync ke Firestore gagal:', err);
+          setOsmSync({ phase: 'idle', saved: 0 });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [osmStations, canContribute]);
+
+  // Naikkan hasil OSM ke App agar kartu OSM bisa dibuka detail + dilaporkan.
+  useEffect(() => {
+    onNearbyUpdate?.(osmStations);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [osmStations]);
+
+  // Gabung komunitas + peta (duplikat <150 m dimenangkan data komunitas).
+  const mergedStations = useMemo(
+    () => mergeCommunityWithMap(stations, osmStations),
+    [stations, osmStations]
+  );
+
+  // Hitung jarak live dari GPS — bukan jarak dummy bawaan seed.
+  const stationsWithLiveDistance = useMemo<GasStation[]>(
+    () =>
+      mergedStations
+        .map((s) => ({
+          ...s,
+          distanceKm: roundDistanceKm(haversineKm(userCoords[0], userCoords[1], s.lat, s.lng)),
+        }))
+        .sort((a, b) => a.distanceKm - b.distanceKm),
+    [mergedStations, userCoords]
+  );
+
+  // Filter dasar (search + fuel) — dipakai untuk marker peta agar pin tidak hilang
+  // hanya karena radius kekecilan / posisi GPS jauh dari data seed.
+  // Catatan jujur: Google Places/OSM tidak menyediakan info jenis BBM per SPBU,
+  // jadi SPBU peta (stok belum diketahui) disembunyikan saat filter BBM spesifik —
+  // kecuali user mengaktifkan showUnknownStock secara eksplisit.
+  const matchesSearchFuel = (station: GasStation, includeUnknownStock: boolean) => {
     const matchesSearch =
       station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       station.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -44,20 +246,32 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
 
     if (!matchesSearch) return false;
 
-    // Radius filter (distance in km)
-    const maxRadius = parseInt(radius, 10);
-    if (station.distanceKm > maxRadius) return false;
-
-    // Fuel filter
     if (selectedFilter === 'Semua') return true;
     if (selectedFilter === 'Madura') return station.brand === 'Toko Madura';
+
+    if (station.fuels.length === 0) return includeUnknownStock;
 
     return station.fuels.some((f) =>
       f.type.toLowerCase().includes(selectedFilter.toLowerCase())
     );
-  });
+  };
+
+  const baseFiltered = stationsWithLiveDistance.filter((s) => matchesSearchFuel(s, showUnknownStock));
+  // SPBU peta yang disembunyikan filter BBM karena stoknya belum diketahui
+  const hiddenUnknownStock = selectedFilter !== 'Semua' && selectedFilter !== 'Madura' && !showUnknownStock
+    ? stationsWithLiveDistance.filter((s) => matchesSearchFuel(s, true) && !matchesSearchFuel(s, false)).length
+    : 0;
+
+  // Filter radius — hanya untuk daftar "Terdekat", bukan untuk pin peta.
+  const maxRadius = parseInt(radius, 10);
+  const filteredStations = (
+    showAllOutsideRadius ? baseFiltered : baseFiltered.filter((s) => s.distanceKm <= maxRadius)
+  );
+  const hiddenByRadius = baseFiltered.length - filteredStations.length;
+  const nearestOutside = baseFiltered[0] ?? null;
 
   const toggleRadius = () => {
+    setShowAllOutsideRadius(false);
     setRadiusIndex((prev) => (prev + 1) % RADII.length);
   };
 
@@ -79,45 +293,94 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
           </span>
           <span className="text-xs font-semibold truncate">
             {filteredStations.length} SPBU aktif dipantau di sekitarmu
+            {osmStatus === 'loading'
+              ? ' • mencari SPBU peta…'
+              : osmStations.length > 0
+              ? ` • ${osmStations.length} dari ${mapSource === 'google' ? 'Google' : 'OSM'}`
+              : ''}
           </span>
         </div>
         <span className="text-[10px] bg-white/90 px-2 py-0.5 rounded-full font-bold shadow-xs">
-          Realtime
+          {osmStatus === 'success' && osmStations.length > 0
+            ? `${mapSource === 'google' ? 'Google' : 'OSM'} + Komunitas`
+            : 'Realtime'}
         </span>
       </div>
+      {osmStatus === 'error' && (
+        <p className="text-[11px] text-slate-500 -mt-2 px-1">
+          SPBU peta (Google + OSM) gagal dimuat — menampilkan data komunitas. Ketuk lokasi untuk coba lagi.
+        </p>
+      )}
+      {osmSync.phase === 'saving' && (
+        <p className="text-[11px] text-slate-500 -mt-2 px-1 flex items-center gap-1">
+          <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+          Menyimpan SPBU baru ke database…
+        </p>
+      )}
+      {osmSync.phase === 'done' && osmSync.saved > 0 && (
+        <p className="text-[11px] text-[#006f67] -mt-2 px-1">
+          {osmSync.saved} SPBU baru tersimpan — pengguna lain langsung melihatnya tanpa loading.
+        </p>
+      )}
 
       {/* 2. Search & Location Bar + Radius Picker */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200/90 shadow-sm">
+        <button
+          onClick={requestLocation}
+          title={isFallback ? 'Ketuk untuk aktifkan lokasi GPS' : 'Ketuk untuk refresh lokasi GPS'}
+          type="button"
+          className="flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200/90 shadow-sm text-left active:scale-[0.99] transition-transform w-full"
+        >
           <div className="flex items-center flex-1 min-w-0 px-2 gap-2">
             <span
-              className="material-symbols-outlined text-[20px] text-[#006194] shrink-0"
+              className={`material-symbols-outlined text-[20px] shrink-0 ${locating ? 'animate-spin text-[#006194]' : isFallback ? 'text-slate-400' : 'text-[#006194]'}`}
               style={{ fontVariationSettings: "'FILL' 1" }}
             >
-              my_location
+              {locating ? 'progress_activity' : 'my_location'}
             </span>
             <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none flex items-center gap-1">
                 Lokasi Kamu
+                {isFallback && locStatus !== 'loading' && (
+                  <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-px rounded-full normal-case tracking-normal">
+                    {locStatus === 'error' ? 'GPS mati — ketuk' : 'Mencari GPS…'}
+                  </span>
+                )}
               </span>
               <p className="text-xs font-semibold text-slate-800 truncate mt-0.5">
-                Duren Tiga, Pancoran, Jakarta Selatan
+                {locating && isFallback ? 'Mencari lokasi GPS…' : locationLabel}
               </p>
+              {locError ? (
+                <p className="text-[10px] text-red-500 truncate mt-0.5">{locError}</p>
+              ) : accuracyM ? (
+                <p className="text-[10px] text-slate-400 mt-0.5">Akurasi ±{accuracyM} m</p>
+              ) : null}
             </div>
           </div>
 
           {/* Radius Selector Pill */}
-          <button
-            onClick={toggleRadius}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleRadius();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleRadius();
+              }
+            }}
             title="Ubah Radius Pencarian"
-            className="h-8 px-2.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#006194] text-xs font-bold flex items-center gap-1 shrink-0 transition-colors active:scale-95 border border-sky-200"
-            type="button"
+            className="h-8 px-2.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-[#006194] text-xs font-bold flex items-center gap-1 shrink-0 transition-colors active:scale-95 border border-sky-200 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[15px]">radar</span>
             <span>{radius}</span>
             <span className="material-symbols-outlined text-[15px] text-slate-400">expand_more</span>
-          </button>
-        </div>
+          </span>
+        </button>
 
         {/* Quick Search Input */}
         <div className="relative">
@@ -150,7 +413,10 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
           return (
             <button
               key={f.key}
-              onClick={() => setSelectedFilter(f.key)}
+              onClick={() => {
+                setSelectedFilter(f.key);
+                setShowUnknownStock(false);
+              }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs ${
                 isActive
                   ? 'bg-[#006194] text-white shadow-sm ring-2 ring-[#006194]/30'
@@ -168,14 +434,33 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
         })}
       </div>
 
+      {/* Hint: SPBU peta disembunyikan filter BBM (Google/OSM tak menyediakan info stok) */}
+      {hiddenUnknownStock > 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2 -mt-1">
+          <p className="text-[11px] text-slate-600 font-medium">
+            {hiddenUnknownStock} SPBU peta disembunyikan — stoknya belum diketahui.
+          </p>
+          <button
+            onClick={() => setShowUnknownStock(true)}
+            className="shrink-0 text-[11px] font-bold text-[#006194] bg-white px-2.5 py-1 rounded-lg border border-sky-200"
+            type="button"
+          >
+            Tetap tampilkan
+          </button>
+        </div>
+      )}
+
       {/* 4. Interactive OpenStreetMap Canvas */}
-      <StationMap
-        stations={filteredStations}
+      <StationMap        stations={baseFiltered}
         selectedStationId={activeStationId}
         onSelectStation={(id) => {
           setActiveStationId(id);
           onSelectStation(id);
         }}
+        userCoords={userCoords}
+        accuracyM={accuracyM}
+        locating={locating}
+        onLocate={requestLocation}
       />
 
       {/* 5. Station Cards Header */}
@@ -189,6 +474,22 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
         <span className="text-xs text-slate-500 font-medium">Radius {radius}</span>
       </div>
 
+      {/* Info: ada SPBU tapi di luar radius — umum bila GPS jauh dari data seed Jakarta */}
+      {hiddenByRadius > 0 && !showAllOutsideRadius && nearestOutside && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+          <p className="text-[11px] text-amber-800 font-medium">
+            {hiddenByRadius} SPBU di luar radius {radius} (terdekat {nearestOutside.distanceKm} km).
+          </p>
+          <button
+            onClick={() => setShowAllOutsideRadius(true)}
+            className="shrink-0 text-[11px] font-bold text-[#006194] bg-white px-2.5 py-1 rounded-lg border border-sky-200"
+            type="button"
+          >
+            Tampilkan semua
+          </button>
+        </div>
+      )}
+
       {/* 6. Gas Stations Cards Stack */}
       <div className="flex flex-col gap-3.5">
         {filteredStations.length === 0 ? (
@@ -196,19 +497,36 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
             <span className="material-symbols-outlined text-[40px] text-slate-300">search_off</span>
             <p className="text-sm font-bold text-slate-700">Tidak ada SPBU sesuai kriteria</p>
             <p className="text-xs text-slate-500">
-              Coba perbesar radius ({radius}) atau pilih filter jenis BBM yang berbeda.
+              {baseFiltered.length === 0 ? (
+                <>Tidak cocok dengan pencarian / filter BBM. Coba kata kunci atau BBM lain.</>
+              ) : (
+                <>Semua {baseFiltered.length} SPBU di luar radius {radius}
+                {nearestOutside ? <> (terdekat {nearestOutside.distanceKm} km)</> : null}.</>
+              )}
             </p>
-            <button
-              onClick={() => {
-                setSelectedFilter('Semua');
-                setSearchQuery('');
-                setRadiusIndex(3); // 10 km
-              }}
-              className="mt-2 text-xs font-bold text-[#006194] bg-sky-50 px-3 py-1.5 rounded-lg border border-sky-200"
-              type="button"
-            >
-              Reset Filter & Radius 10 km
-            </button>
+            <div className="flex items-center gap-2 mt-2">
+              {baseFiltered.length > 0 && (
+                <button
+                  onClick={() => setShowAllOutsideRadius(true)}
+                  className="text-xs font-bold text-white bg-[#006194] px-3 py-1.5 rounded-lg"
+                  type="button"
+                >
+                  Tampilkan {baseFiltered.length} terdekat
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setSelectedFilter('Semua');
+                  setSearchQuery('');
+                  setShowAllOutsideRadius(false);
+                  setRadiusIndex(3); // 10 km
+                }}
+                className="text-xs font-bold text-[#006194] bg-sky-50 px-3 py-1.5 rounded-lg border border-sky-200"
+                type="button"
+              >
+                Reset Filter & Radius 10 km
+              </button>
+            </div>
           </div>
         ) : (
           filteredStations.map((station) => {
@@ -259,6 +577,8 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                         ? 'bg-amber-50 text-[#d97706] border border-amber-200'
                         : pinStatus.color === 'red'
                         ? 'bg-red-50 text-[#dc2626] border border-red-200'
+                        : pinStatus.color === 'gray'
+                        ? 'bg-slate-100 text-slate-500 border border-slate-300'
                         : 'bg-amber-100 text-[#894d00] border border-amber-300'
                     }`}
                   >
@@ -270,6 +590,8 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                           ? 'bg-[#d97706]'
                           : pinStatus.color === 'red'
                           ? 'bg-[#dc2626]'
+                          : pinStatus.color === 'gray'
+                          ? 'bg-slate-400'
                           : 'bg-[#894d00]'
                       }`}
                     />
@@ -292,7 +614,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                 )}
 
                 {/* Primary Fuel status snippet */}
-                {targetFuel && (
+                {targetFuel ? (
                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-800">{targetFuel.type}</span>
@@ -305,6 +627,17 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
                       <span>{station.lastReportMinutesAgo} mnt lalu • {station.verifiedCount} verifikasi</span>
                     </div>
                   </div>
+                ) : (
+                  <button
+                    onClick={() => onSelectStation(station.id)}
+                    type="button"
+                    className="bg-sky-50 border border-sky-200 rounded-lg p-2 flex items-center justify-between text-left active:scale-[0.99] transition-transform w-full"
+                  >
+                    <span className="text-xs font-semibold text-[#004b73]">
+                      Stok belum ada laporan — jadilah pelapor pertama
+                    </span>
+                    <span className="material-symbols-outlined text-[16px] text-[#006194]">chevron_right</span>
+                  </button>
                 )}
 
                 {/* Alternative fuel ready if primary is out */}

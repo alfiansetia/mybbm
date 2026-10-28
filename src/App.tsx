@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Vehicle,
   GasStation,
@@ -11,7 +11,7 @@ import {
   UserProfile,
   CommunityReport,
 } from './types';
-import { initialStations } from './data/seedData';
+import { LEGACY_DUMMY_STATION_IDS } from './data/seedData';
 import {
   testConnection,
   auth,
@@ -22,6 +22,7 @@ import {
 import {
   subscribeStations,
   updateStationInDb,
+  saveOsmStationsToDb,
   subscribeVehicles,
   saveVehicleToDb,
   deleteVehicleFromDb,
@@ -44,6 +45,8 @@ import { DetailSpbuView } from './views/DetailSpbuView';
 import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
 import { calculateReporterScore } from './utils/reputation';
+import { useUserLocation } from './hooks/useUserLocation';
+import { fetchMapStations, mergeStationsById } from './services/nearbyStations';
 
 // Data pribadi (kendaraan/log/profil) murni milik user — tidak ada seed dummy.
 // Hanya stations (data publik bersama) yang memakai seed bootstrap.
@@ -87,11 +90,75 @@ export default function App() {
 
   const [logs, setLogs] = useState<FuelLog[]>(() => loadJSON('mybbm_logs', []));
 
-  // Stations = data publik shared, wajar memakai seed bootstrap + realtime Firestore
+  // Stations = data publik: hasil deteksi peta + laporan komunitas. Tanpa seed dummy.
   const [stations, setStations] = useState<GasStation[]>(() => {
-    const saved = localStorage.getItem('mybbm_stations');
-    return saved ? JSON.parse(saved) : initialStations;
+    try {
+      const saved = localStorage.getItem('mybbm_stations');
+      if (!saved) return [];
+      const parsed = JSON.parse(saved) as GasStation[];
+      return parsed.filter((s) => !LEGACY_DUMMY_STATION_IDS.includes(s.id));
+    } catch {
+      return [];
+    }
   });
+
+  // SPBU real dari peta (OSM) hasil fetch di CekSpbuView — disimpan di sini agar
+  // bisa dibuka detailnya + dilaporkan (laporan pertama menyimpannya ke Firestore).
+  const [nearbyStations, setNearbyStations] = useState<GasStation[]>([]);
+
+  // Bootstrap: begitu app dibuka + GPS dapat, langsung deteksi SPBU terdekat (radius 5 km)
+  // dan cache ke Firestore (saat login) agar user lain langsung dapat tanpa loading.
+  const bootstrapped = useRef(false);
+  const pendingSave = useRef<GasStation[]>([]);
+  const { coords: bootCoords, status: bootStatus } = useUserLocation(true);
+
+  useEffect(() => {
+    if (bootStatus !== 'success' || bootstrapped.current) return;
+    bootstrapped.current = true;
+    const ctrl = new AbortController();
+    const apiKey =
+      import.meta.env.VITE_GOOGLE_PLACES_API_KEY ||
+      import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+      '';
+    fetchMapStations({
+      lat: bootCoords[0],
+      lng: bootCoords[1],
+      radiusM: 5000,
+      placesApiKey: apiKey || undefined,
+      signal: ctrl.signal,
+    })
+      .then(({ stations: found, source }) => {
+        if (found.length === 0) return;
+        console.info(`[Bootstrap] ${found.length} SPBU via ${source} — tampil + cache`);
+        setNearbyStations((prev) => mergeStationsById(prev, found));
+        pendingSave.current = found.filter(
+          (s) => s.id.startsWith('osm-') || s.id.startsWith('gplaces-')
+        );
+      })
+      .catch(() => {
+        // Gagal total (offline/kuota) — CekSpbuView akan coba lagi dengan cache-nya.
+      });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootStatus]);
+
+  // Simpan hasil bootstrap ke Firestore begitu user login (rules butuh auth).
+  useEffect(() => {
+    if (!currentUser || pendingSave.current.length === 0) return;
+    const batch = pendingSave.current.splice(0, 25);
+    saveOsmStationsToDb(batch).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid]);
+
+  /** Terapkan mutasi ke satu SPBU di kedua list (komunitas + peta), return hasil update. */
+  const updateStationEverywhere = (stationId: string, mutate: (st: GasStation) => GasStation) => {
+    const current = [...stations, ...nearbyStations].find((s) => s.id === stationId);
+    if (!current) return null;
+    const updated = mutate(current);
+    setStations((prev) => prev.map((st) => (st.id === stationId ? updated : st)));
+    setNearbyStations((prev) => prev.map((st) => (st.id === stationId ? updated : st)));
+    return updated;
+  };
 
   const [userProfile, setUserProfile] = useState<UserProfile>(() =>
     loadJSON('mybbm_user', GUEST_PROFILE)
@@ -160,9 +227,7 @@ export default function App() {
         const newProfile: UserProfile = {
           name: currentUser.displayName || currentUser.email?.split('@')[0] || 'Pengendara',
           email: currentUser.email || 'pengendara@gmail.com',
-          avatar:
-            currentUser.photoURL ||
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+          avatar: currentUser.photoURL || '',
           credibilityScore: 5.0,
           reputationPoints: 100,
           isVerified: true,
@@ -290,47 +355,57 @@ export default function App() {
 
     let targetUpdatedStation: GasStation | null = null;
 
-    setStations((prev) =>
-      prev.map((st) => {
-        if (st.id !== stationId) return st;
+    targetUpdatedStation = updateStationEverywhere(stationId, (st) => {
+      // Update fuel status in station
+      const updatedFuels = st.fuels.map((f) => {
+        if (f.type.toLowerCase().includes(newReport.fuelType.toLowerCase())) {
+          return {
+            ...f,
+            status: newReport.status,
+            notes: newReport.notes || f.notes,
+            lastUpdated: 'Baru saja',
+          };
+        }
+        return f;
+      });
 
-        // Update fuel status in station
-        const updatedFuels = st.fuels.map((f) => {
-          if (f.type.toLowerCase().includes(newReport.fuelType.toLowerCase())) {
-            return {
-              ...f,
-              status: newReport.status,
-              notes: newReport.notes || f.notes,
-              lastUpdated: 'Baru saja',
-            };
-          }
-          return f;
-        });
+      // Laporan pertama ke SPBU peta (OSM): daftarkan jenis BBM-nya sekalian
+      const reportedFuels =
+        updatedFuels.length === 0
+          ? [
+              {
+                type: newReport.fuelType,
+                ronOrCn: '',
+                price: 0,
+                status: newReport.status,
+                notes: newReport.notes,
+                lastUpdated: 'Baru saja',
+              },
+            ]
+          : updatedFuels;
 
-        // Anti-spam rule: replace previous report by same user if within 30 mins
-        const otherReports = st.reports.filter(
-          (r) => r.reporterName !== userProfile.name || r.fuelType !== newReport.fuelType
-        );
+      // Anti-spam rule: replace previous report by same user if within 30 mins
+      const otherReports = st.reports.filter(
+        (r) => r.reporterName !== userProfile.name || r.fuelType !== newReport.fuelType
+      );
 
-        const updated: GasStation = {
-          ...st,
-          fuels: updatedFuels,
-          queueStatus: newReport.queueStatus,
-          queueEstimateText:
-            newReport.queueStatus === 'Sepi'
-              ? 'Lancar (<3 min)'
-              : newReport.queueStatus === 'Sedang'
-              ? 'Antrean Sedang (±6-10 mnt)'
-              : 'Antrean Panjang (>15 mnt)',
-          lastReportMinutesAgo: 1,
-          contributorsCount: st.contributorsCount + 1,
-          reports: [newReport, ...otherReports],
-        };
+      const updated: GasStation = {
+        ...st,
+        fuels: reportedFuels,
+        queueStatus: newReport.queueStatus,
+        queueEstimateText:
+          newReport.queueStatus === 'Sepi'
+            ? 'Lancar (<3 min)'
+            : newReport.queueStatus === 'Sedang'
+            ? 'Antrean Sedang (±6-10 mnt)'
+            : 'Antrean Panjang (>15 mnt)',
+        lastReportMinutesAgo: 1,
+        contributorsCount: st.contributorsCount + 1,
+        reports: [newReport, ...otherReports],
+      };
 
-        targetUpdatedStation = updated;
-        return updated;
-      })
-    );
+      return updated;
+    });
 
     // Save updated station to Firestore
     if (targetUpdatedStation) {
@@ -371,64 +446,59 @@ export default function App() {
     }
     let targetUpdatedStation: GasStation | null = null;
 
-    setStations((prev) =>
-      prev.map((st) => {
-        if (st.id !== stationId) return st;
+    targetUpdatedStation = updateStationEverywhere(stationId, (st) => {
+      const updatedReports = st.reports.map((rep) => {
+        if (rep.id !== reportId) return rep;
 
-        const updatedReports = st.reports.map((rep) => {
-          if (rep.id !== reportId) return rep;
+        const alreadyUp = rep.userVoted === 'up';
+        const alreadyDown = rep.userVoted === 'down';
 
-          const alreadyUp = rep.userVoted === 'up';
-          const alreadyDown = rep.userVoted === 'down';
+        let newUp = rep.upvotes;
+        let newDown = rep.downvotes;
+        let newUserVoted: 'up' | 'down' | undefined = voteType;
 
-          let newUp = rep.upvotes;
-          let newDown = rep.downvotes;
-          let newUserVoted: 'up' | 'down' | undefined = voteType;
-
-          if (voteType === 'up') {
-            if (alreadyUp) {
-              newUp -= 1;
-              newUserVoted = undefined;
-            } else {
-              newUp += 1;
-              if (alreadyDown) newDown -= 1;
-            }
+        if (voteType === 'up') {
+          if (alreadyUp) {
+            newUp -= 1;
+            newUserVoted = undefined;
           } else {
-            if (alreadyDown) {
-              newDown -= 1;
-              newUserVoted = undefined;
-            } else {
-              newDown += 1;
-              if (alreadyUp) newUp -= 1;
-            }
+            newUp += 1;
+            if (alreadyDown) newDown -= 1;
           }
+        } else {
+          if (alreadyDown) {
+            newDown -= 1;
+            newUserVoted = undefined;
+          } else {
+            newDown += 1;
+            if (alreadyUp) newUp -= 1;
+          }
+        }
 
-          // Recalculate reporter trust score
-          const updatedTrust = calculateReporterScore(
-            rep.reporterTrustScore,
-            newUp,
-            newDown
-          );
+        // Recalculate reporter trust score
+        const updatedTrust = calculateReporterScore(
+          rep.reporterTrustScore,
+          newUp,
+          newDown
+        );
 
-          return {
-            ...rep,
-            upvotes: newUp,
-            downvotes: newDown,
-            userVoted: newUserVoted,
-            reporterTrustScore: updatedTrust,
-          };
-        });
-
-        const updated: GasStation = {
-          ...st,
-          verifiedCount: st.verifiedCount + (voteType === 'up' ? 1 : 0),
-          reports: updatedReports,
+        return {
+          ...rep,
+          upvotes: newUp,
+          downvotes: newDown,
+          userVoted: newUserVoted,
+          reporterTrustScore: updatedTrust,
         };
+      });
 
-        targetUpdatedStation = updated;
-        return updated;
-      })
-    );
+      const updated: GasStation = {
+        ...st,
+        verifiedCount: st.verifiedCount + (voteType === 'up' ? 1 : 0),
+        reports: updatedReports,
+      };
+
+      return updated;
+    });
 
     if (targetUpdatedStation) {
       await updateStationInDb(targetUpdatedStation);
@@ -505,6 +575,36 @@ export default function App() {
     }
   };
 
+  // Ubah data kendaraan (nama, plat, odo, dsb.) + simpan ke Firestore.
+  const handleUpdateVehicle = async (updated: Vehicle) => {
+    setVehicles((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+    if (currentUser) {
+      await saveVehicleToDb({ ...updated, userId: currentUser.uid });
+    }
+  };
+
+  // Hapus satu kendaraan + seluruh log BBM-nya (kendaraan aktif dialihkan otomatis).
+  const handleDeleteVehicle = async (id: string) => {
+    const remaining = vehicles.filter((v) => v.id !== id);
+    const removedLogs = logs.filter((l) => l.vehicleId === id);
+    setVehicles(remaining);
+    setLogs((prev) => prev.filter((l) => l.vehicleId !== id));
+
+    let nextActive: string | null = activeVehicleId;
+    if (activeVehicleId === id) {
+      nextActive = remaining[0]?.id ?? null;
+      setActiveVehicleId(nextActive);
+    }
+
+    if (currentUser) {
+      await deleteVehicleFromDb(id);
+      await Promise.all(removedLogs.map((l) => deleteLogFromDb(l.id)));
+      await saveUserProfileToDb(currentUser.uid, { activeVehicleId: nextActive ?? '' });
+    } else {
+      localStorage.removeItem('mybbm_active_vehicle');
+    }
+  };
+
   // Reset = hapus data pribadi milik akun ini (kendaraan + log + statistik profil).
   // Data stations (publik) dipertahankan.
   const handleResetData = async () => {
@@ -560,7 +660,13 @@ export default function App() {
     }
   };
 
-  const selectedStation = stations.find((s) => s.id === selectedStationDetailId);
+  // Gabungan komunitas + peta untuk semua tampilan (Beranda, Cek SPBU, Detail).
+  const displayStations = useMemo(
+    () => mergeStationsById(stations, nearbyStations),
+    [stations, nearbyStations]
+  );
+
+  const selectedStation = displayStations.find((s) => s.id === selectedStationDetailId);
 
   // Subtitle for header
   let subtitle = 'Beranda';
@@ -571,11 +677,11 @@ export default function App() {
   else if (activeTab === 'akun') subtitle = 'Akun & Kendaraan';
 
   // Tab yang butuh kendaraan aktif — hanya berlaku bila sudah login.
+  // Beranda TIDAK hard-block: tanpa kendaraan tetap tampil konten + CTA tambah kendaraan.
   // Tamu tetap bisa buka beranda (versi publik), cek SPBU, dan detail.
   const isGuest = !currentUser;
   const needsVehicle =
-    !!currentUser &&
-    (activeTab === 'beranda' || activeTab === 'catat-bbm' || activeTab === 'statistik');
+    !!currentUser && (activeTab === 'catat-bbm' || activeTab === 'statistik');
 
   return (
     <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
@@ -622,25 +728,26 @@ export default function App() {
             onAction={() => handleNavigateTab('akun')}
           />
         ) : activeTab === 'beranda' ? (
-          isGuest ? (
+          isGuest || !activeVehicle ? (
             <GuestBerandaView
-              stations={stations}
+              stations={displayStations}
               onSelectStation={handleSelectStation}
               onNavigateTab={handleNavigateTab}
               onLogin={handleGoogleLogin}
+              noVehicleMode={!isGuest}
             />
           ) : (
             <BerandaView
               activeVehicle={activeVehicle!}
               logs={logs}
-              stations={stations}
+              stations={displayStations}
               onNavigateTab={handleNavigateTab}
               onSelectStation={handleSelectStation}
               onOpenReportModal={(stationId) => {
                 if (stationId) {
                   handleSelectStation(stationId);
                 } else {
-                  handleSelectStation(stations[1]?.id || stations[0]?.id);
+                  handleSelectStation(displayStations[1]?.id || displayStations[0]?.id);
                 }
               }}
               onExportData={handleExportCSV}
@@ -651,11 +758,13 @@ export default function App() {
           <CekSpbuView
             stations={stations}
             onSelectStation={handleSelectStation}
+            onNearbyUpdate={(list) => setNearbyStations((prev) => mergeStationsById(prev, list))}
+            canContribute={!!currentUser}
             onOpenReportModal={(stationId) => {
               if (stationId) {
                 handleSelectStation(stationId);
               } else {
-                handleSelectStation(stations[1]?.id || stations[0]?.id);
+                handleSelectStation(displayStations[1]?.id || displayStations[0]?.id);
               }
             }}
           />
@@ -663,6 +772,7 @@ export default function App() {
           <CatatBbmView
             activeVehicle={activeVehicle!}
             allVehicles={vehicles}
+            stations={displayStations}
             initialMode={catatInitialMode}
             onSaveLog={handleSaveLog}
             onCancel={() => handleNavigateTab('beranda')}
@@ -684,6 +794,8 @@ export default function App() {
             onLogoutGoogle={handleGoogleLogout}
             onSelectVehicle={handleSelectVehicle}
             onAddVehicle={handleAddVehicle}
+            onUpdateVehicle={handleUpdateVehicle}
+            onDeleteVehicle={handleDeleteVehicle}
             onResetData={handleResetData}
           />
         )}

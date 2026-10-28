@@ -1,6 +1,7 @@
 import React from 'react';
 import { Vehicle, UserProfile } from '../types';
 import { VehicleIcon } from './VehicleIcon';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface TopHeaderProps {
   currentSubtitle: string;
@@ -120,17 +121,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             onClick={onOpenAccount}
             aria-label="Profil Akun"
             type="button"
-            className="w-9 h-9 rounded-full ring-2 ring-[#006194]/20 overflow-hidden hover:opacity-90 active:scale-95 transition-all shrink-0 bg-slate-200 flex items-center justify-center"
+            className="rounded-full ring-2 ring-[#006194]/20 overflow-hidden hover:opacity-90 active:scale-95 transition-all shrink-0"
           >
-            {userProfile.avatar ? (
-              <img
-                src={userProfile.avatar}
-                alt={userProfile.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="material-symbols-outlined text-[20px] text-slate-500">person</span>
-            )}
+            <ProfileAvatar name={userProfile.name} src={userProfile.avatar} size="sm" />
           </button>
         </div>
       </div>

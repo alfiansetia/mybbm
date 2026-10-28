@@ -1,24 +1,34 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { GasStation } from '../types';
 import { MapErrorBoundary } from './MapErrorBoundary';
+import { DEFAULT_COORDS } from '../utils/geo';
 
 interface StationMapProps {
   stations: GasStation[];
   selectedStationId?: string | null;
   onSelectStation: (stationId: string) => void;
   userCoords?: [number, number];
+  accuracyM?: number | null;
+  locating?: boolean;
+  onLocate?: () => void;
 }
 
 // In-map custom control buttons using the official useMap hook
-const MapControls: React.FC<{ userCoords: [number, number] }> = ({ userCoords }) => {
+const MapControls: React.FC<{
+  userCoords: [number, number];
+  locating?: boolean;
+  onLocate?: () => void;
+}> = ({ userCoords, locating, onLocate }) => {
   const map = useMap();
 
   const handleCenterUser = useCallback(() => {
+    // Minta posisi GPS terbaru dulu (jika disediakan), lalu pan ke posisi terakhir yang diketahui.
+    onLocate?.();
     if (!map) return;
     map.panTo({ lat: userCoords[0], lng: userCoords[1] });
     map.setZoom(15);
-  }, [map, userCoords]);
+  }, [map, userCoords, onLocate]);
 
   const handleZoomIn = useCallback(() => {
     if (!map) return;
@@ -39,13 +49,14 @@ const MapControls: React.FC<{ userCoords: [number, number] }> = ({ userCoords })
         title="Pusatkan ke Lokasi Saya"
         aria-label="Pusatkan Lokasi"
         type="button"
-        className="w-9 h-9 rounded-lg bg-white/95 backdrop-blur-md text-[#006194] shadow-md flex items-center justify-center active:scale-95 transition-transform hover:bg-white"
+        className="w-9 h-9 rounded-lg bg-white/95 backdrop-blur-md text-[#006194] shadow-md flex items-center justify-center active:scale-95 transition-transform hover:bg-white disabled:opacity-60"
+        disabled={locating}
       >
         <span
-          className="material-symbols-outlined text-[20px]"
+          className={`material-symbols-outlined text-[20px] ${locating ? 'animate-spin' : ''}`}
           style={{ fontVariationSettings: "'FILL' 1" }}
         >
-          near_me
+          {locating ? 'progress_activity' : 'near_me'}
         </span>
       </button>
       <button
@@ -70,11 +81,40 @@ const MapControls: React.FC<{ userCoords: [number, number] }> = ({ userCoords })
   );
 };
 
+// Pan + zoom ke posisi user setiap kali GPS berubah signifikan,
+// tapi berhenti mengganggu setelah user menggeser peta manual.
+const RecenterOnLocate: React.FC<{ userCoords: [number, number] }> = ({ userCoords }) => {
+  const map = useMap();
+  const prev = React.useRef<string>('');
+  const userMoved = React.useRef(false);
+
+  useEffect(() => {
+    if (!map) return;
+    const listener = map.addListener('dragstart', () => {
+      userMoved.current = true;
+    });
+    return () => listener.remove();
+  }, [map]);
+
+  useEffect(() => {
+    if (!map || userMoved.current) return;
+    const key = `${userCoords[0].toFixed(4)},${userCoords[1].toFixed(4)}`;
+    if (prev.current === key) return;
+    prev.current = key;
+    map.panTo({ lat: userCoords[0], lng: userCoords[1] });
+    map.setZoom(15);
+  }, [map, userCoords]);
+  return null;
+};
+
 export const StationMap: React.FC<StationMapProps> = ({
   stations,
   selectedStationId,
   onSelectStation,
-  userCoords = [-6.2415, 106.8480], // Default Duren Tiga / Pancoran
+  userCoords = DEFAULT_COORDS,
+  accuracyM = null,
+  locating = false,
+  onLocate,
 }) => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
   // Map ID custom via env, fallback ke DEMO_MAP_ID bawaan Google untuk dev.
@@ -87,16 +127,17 @@ export const StationMap: React.FC<StationMapProps> = ({
         <APIProvider apiKey={apiKey} libraries={['marker']}>
           <div className="w-full h-full relative" key="gmap-stable">
             <Map
-              defaultCenter={{ lat: userCoords[0], lng: userCoords[1] }}
+              defaultCenter={{ lat: DEFAULT_COORDS[0], lng: DEFAULT_COORDS[1] }}
               defaultZoom={14}
               mapId={mapId}
               gestureHandling="greedy"
               disableDefaultUI={true}
               style={{ width: '100%', height: '100%' }}
             >
+              <RecenterOnLocate userCoords={userCoords} />
               {/* User Location Pulse Marker */}
-              <AdvancedMarker position={{ lat: userCoords[0], lng: userCoords[1] }}>
-                <div className="relative flex items-center justify-center">
+              <AdvancedMarker position={{ lat: userCoords[0], lng: userCoords[1] }} zIndex={50}>
+                <div className="relative flex items-center justify-center" title={accuracyM ? `Akurasi ±${accuracyM} m` : 'Lokasi saya'}>
                   <div className="w-4 h-4 rounded-full bg-[#006194] border-2 border-white shadow-md animate-pulse" />
                   <div className="absolute w-8 h-8 rounded-full bg-[#006194]/25 pointer-events-none" />
                 </div>
@@ -113,11 +154,15 @@ export const StationMap: React.FC<StationMapProps> = ({
                   station.queueStatus === 'Sedang' ||
                   station.fuels.some((f) => f.status === 'Terbatas');
                 const isMadura = station.brand === 'Toko Madura';
+                const isUnknown = station.fuels.length === 0; // data peta, stok belum ada
 
                 let bgClass = 'bg-[#059669]'; // green available
                 let iconName = 'local_gas_station';
 
-                if (isMadura) {
+                if (isUnknown) {
+                  bgClass = 'bg-slate-500';
+                  iconName = 'local_gas_station';
+                } else if (isMadura) {
                   bgClass = 'bg-[#894d00]';
                   iconName = 'storefront';
                 } else if (hasEmpty) {
@@ -146,7 +191,7 @@ export const StationMap: React.FC<StationMapProps> = ({
                         <span className={`w-2 h-2 rounded-full ${bgClass}`} />
                         <span className="text-[10px] font-bold text-slate-800">
                           {station.name.replace('SPBU Pertamina ', '').replace('SPBU ', '')} (
-                          {station.distanceKm}k)
+                          {station.distanceKm} km)
                         </span>
                       </div>
                       <div
@@ -160,7 +205,7 @@ export const StationMap: React.FC<StationMapProps> = ({
                 );
               })}
 
-              <MapControls userCoords={userCoords} />
+              <MapControls userCoords={userCoords} locating={locating} onLocate={onLocate} />
             </Map>
           </div>
         </APIProvider>
@@ -188,6 +233,10 @@ export const StationMap: React.FC<StationMapProps> = ({
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626]" />
           <span>Habis / Tutup</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+          <span>Belum ada data</span>
         </div>
       </div>
     </div>

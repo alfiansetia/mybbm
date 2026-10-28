@@ -4,6 +4,7 @@ import { GasStation, CommunityReport, UserProfile } from '../types';
 import { MapErrorBoundary } from '../components/MapErrorBoundary';
 import { ReputationBadge } from '../components/ReputationBadge';
 import { StatusPill } from '../components/StatusPill';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import { formatRupiah } from '../utils/format';
 
 interface DetailSpbuViewProps {
@@ -31,6 +32,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   const [selectedQueue, setSelectedQueue] = useState<'Sepi' | 'Sedang' | 'Panjang'>('Sepi');
   const [reportNote, setReportNote] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
 
   // Active top community report
   const primaryReport = station.reports.length > 0 ? station.reports[0] : null;
@@ -68,7 +70,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       fuelType: selectedFuel,
       status: selectedStatus,
       queueStatus: selectedQueue,
-      notes: reportNote || undefined,
+      notes: reportNote.trim() || '',
       reporterName: userProfile.name,
       reporterAvatar: userProfile.avatar,
       reporterTrustScore: userProfile.credibilityScore,
@@ -108,14 +110,20 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       </div>
 
       {/* 1. Interactive Mini Map / Location Context */}
-      <div className="relative w-full h-44 rounded-xl overflow-hidden shadow-sm bg-slate-100 mb-4 border border-slate-200">
+      <div
+        className={
+          isMapExpanded
+            ? 'fixed inset-0 z-50 bg-slate-100'
+            : 'relative w-full h-44 rounded-xl overflow-hidden shadow-sm bg-slate-100 mb-4 border border-slate-200'
+        }
+      >
         {import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
           <MapErrorBoundary fallbackLabel="Peta detail tidak dapat dimuat karena API key tidak valid. Info stok di bawah tetap bisa dipakai.">
           <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY} libraries={['marker']}>
-            <div className="w-full h-full relative">
+            <div className="w-full h-full relative" key={isMapExpanded ? 'gmap-expanded' : 'gmap-mini'}>
               <Map
                 defaultCenter={{ lat: station.lat, lng: station.lng }}
-                defaultZoom={15}
+                defaultZoom={isMapExpanded ? 16 : 15}
                 mapId={import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'}
                 gestureHandling="greedy"
                 disableDefaultUI={true}
@@ -145,12 +153,14 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               Pantauan Google Maps Live
             </span>
             <button
-              onClick={handleOpenGoogleMaps}
+              onClick={() => setIsMapExpanded((v) => !v)}
               className="px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-sm text-[#006194] text-[11px] font-bold flex items-center gap-1 shadow-xs hover:bg-white"
               type="button"
             >
-              <span className="material-symbols-outlined text-[15px]">fullscreen</span>
-              Peta Luas
+              <span className="material-symbols-outlined text-[15px]">
+                {isMapExpanded ? 'close_fullscreen' : 'fullscreen'}
+              </span>
+              {isMapExpanded ? 'Tutup' : 'Peta Luas'}
             </button>
           </div>
         </div>
@@ -214,7 +224,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </span>
               <span className="text-slate-300">•</span>
               <span className="text-[11px] text-slate-500">
-                Update {station.lastReportMinutesAgo} mnt lalu
+                {station.reports.length === 0 ? 'Belum ada laporan' : `Update ${station.lastReportMinutesAgo} mnt lalu`}
               </span>
             </div>
             <p className="text-xs font-semibold text-slate-800">
@@ -239,6 +249,15 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         </div>
 
         <div className="flex flex-col gap-2.5">
+          {station.fuels.length === 0 && (
+            <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 text-center flex flex-col items-center gap-1.5">
+              <span className="material-symbols-outlined text-[28px] text-[#006194]">help_outline</span>
+              <p className="text-xs font-bold text-slate-800">Stok SPBU ini belum ada datanya</p>
+              <p className="text-[11px] text-slate-500">
+                Lokasi dari peta OpenStreetMap. Ketuk "Kasih Info BBM" di bawah untuk jadi pelapor pertama.
+              </p>
+            </div>
+          )}
           {station.fuels.map((fuel) => {
             const isKosong = fuel.status === 'Kosong';
             const isTerbatas = fuel.status === 'Terbatas';
@@ -279,8 +298,14 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
                         isKosong ? 'text-slate-400 line-through' : 'text-slate-900'
                       }`}
                     >
-                      {formatRupiah(fuel.price)}
-                      <span className="text-[10px] text-slate-400 font-normal">/L</span>
+                      {fuel.price > 0 ? (
+                        <>
+                          {formatRupiah(fuel.price)}
+                          <span className="text-[10px] text-slate-400 font-normal">/L</span>
+                        </>
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400">Harga blm ada</span>
+                      )}
                     </div>
                     <StatusPill status={fuel.status} uppercase />
                   </div>
@@ -324,14 +349,11 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-slate-200 ring-2 ring-[#006194]/20 overflow-hidden shrink-0">
-                <img
-                  src={
-                    primaryReport.reporterAvatar ||
-                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
-                  }
-                  alt={primaryReport.reporterName}
-                  className="w-full h-full object-cover"
+              <div className="shrink-0 ring-2 ring-[#006194]/20 rounded-full">
+                <ProfileAvatar
+                  name={primaryReport.reporterName}
+                  src={primaryReport.reporterAvatar}
+                  size="sm"
                 />
               </div>
               <div>

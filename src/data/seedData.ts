@@ -1,5 +1,15 @@
 import { Vehicle, GasStation, FuelLog, UserProfile } from '../types';
 
+/** ID SPBU dummy warisan (seed awal) — disembunyikan dari semua tampilan. */
+export const LEGACY_DUMMY_STATION_IDS = [
+  'spbu-31-12701',
+  'spbu-31-12802',
+  'spbu-34-12803',
+  'spbu-shell-mt-haryono',
+  'spbu-bp-soepomo',
+  'kios-madura-romli',
+];
+
 export const initialVehicles: Vehicle[] = [
   {
     id: 'veh-1',
@@ -13,6 +23,7 @@ export const initialVehicles: Vehicle[] = [
     primaryFuel: 'Pertalite',
     currentOdo: 14850,
     averageKmL: 48.5,
+    tankCapacityL: 5.5,
   },
   {
     id: 'veh-2',
@@ -26,13 +37,14 @@ export const initialVehicles: Vehicle[] = [
     primaryFuel: 'Pertamax',
     currentOdo: 32400,
     averageKmL: 14.2,
+    tankCapacityL: 45,
   },
 ];
 
 export const initialUserProfile: UserProfile = {
   name: 'Budi Santoso',
   email: 'budi.santoso@gmail.com',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+  avatar: '',
   credibilityScore: 4.9,
   reputationPoints: 485,
   isVerified: true,
