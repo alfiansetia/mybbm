@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Deploy myBBM ke Cloud Run TANPA paste key ke console.
-# Pakai:  cp .env.deploy.example .env.deploy  # isi sekali
-#         bash deploy.sh                        # tiap kali deploy
+# Pakai:  isi .env seperti biasa (lihat .env.example) → bash deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-if [[ ! -f .env.deploy ]]; then
-  echo "Belum ada .env.deploy — duplikat dulu: cp .env.deploy.example .env.deploy lalu isi."
+if [[ ! -f .env ]]; then
+  echo "Belum ada .env — duplikat dulu: cp .env.example .env lalu isi."
   exit 1
 fi
 set -a
 # shellcheck disable=SC1091
-source .env.deploy
+source .env
 set +a
 
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"

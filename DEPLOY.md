@@ -68,13 +68,12 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 
 ### Opsi A — Cloud Build (disarankan, tanpa paste key)
 
-Isi key sekali di file lokal (gitignored), deploy berikutnya cukup satu perintah:
+`.env` yang dipakai run lokal itu juga yang dipakai deploy — isi sekali,
+deploy berikutnya cukup satu perintah:
 
 ```bash
-# Di Cloud Shell / terminal (sekali saja):
-cp .env.deploy.example .env.deploy   # lalu isi semua nilai di dalamnya
-
-# Tiap kali deploy:
+# Di Cloud Shell / terminal: isi .env seperti biasa (lihat .env.example,
+# pastikan PROJECT_ID terisi), lalu tiap kali deploy:
 bash deploy.sh
 ```
 
