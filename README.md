@@ -2,7 +2,7 @@
 
 - **Tagline:** Live fuel-stock map crowdsourced + AI receipt scan for Indonesian drivers.
 - **Live URL:** https://mybbm-773235037448.asia-southeast2.run.app
-- **Landing Page URL:** https://mybbm-773235037448.asia-southeast2.run.app (satu deploy — tampil untuk pengunjung logged-out)
+- **Landing Page URL:** https://mybbm-773235037448.asia-southeast2.run.app/landing (static checkpoint; onboarding in-app tetap di `/` untuk guest via `src/views/LandingView.tsx`)
 - **Repository:** https://github.com/alfiansetia/mybbm
 - **Short Demo Video (<= 3 min):** [TODO]
 - **Technical Deep-Dive Video (<= 15 min):** [TODO]

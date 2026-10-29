@@ -13,9 +13,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onEnter, onLogin }) =>
       <header className="sticky top-0 z-10 bg-white/85 backdrop-blur border-b border-slate-200">
         <div className="max-w-[480px] mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-[#006194] text-white flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">local_gas_station</span>
-            </span>
+            <img src="/favicon.svg" alt="myBBM" className="w-8 h-8 rounded-lg shadow-sm" />
             <span className="font-extrabold text-[15px] font-headline">myBBM</span>
           </div>
           <button

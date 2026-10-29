@@ -157,6 +157,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Landing page checkpoint (static, tanpa JS): /landing -> landing.html
+// Prod: dist/landing.html (dicopy dari public/ saat build). Dev: public/landing.html.
+app.get('/landing', (req, res) => {
+  const file =
+    process.env.NODE_ENV === 'production'
+      ? path.join(__dirname, 'dist', 'landing.html')
+      : path.join(__dirname, 'public', 'landing.html');
+  res.sendFile(file);
+});
+
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, 'dist')));

@@ -29,14 +29,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="max-w-[480px] mx-auto h-16 px-4 flex items-center justify-between gap-2">
         {/* Brand Logo & Subtitle */}
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#006194] to-[#007bb9] flex items-center justify-center text-white shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-              water_drop
-            </span>
-          </div>
+          <img src="/favicon.svg" alt="myBBM" className="w-8 h-8 rounded-lg shadow-sm shrink-0" />
           <div className="flex flex-col min-w-0">
             <span className="font-extrabold text-[18px] text-[#006194] tracking-tight leading-none">
-              mybbm
+              myBBM
             </span>
             <span className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
               {currentSubtitle}

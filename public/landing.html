@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#006194" />
+  <title>myBBM — Jangan Antre 20 Menit untuk SPBU yang Kosong</title>
+  <meta name="description" content="Peta stok & antrean SPBU live crowdsourced Indonesia + scan struk AI. Gratis, dari komunitas untuk komunitas. Road to DevFest Jakarta 2026." />
+  <meta property="og:title" content="myBBM — Peta Stok BBM Live + Scan Struk AI" />
+  <meta property="og:description" content="Stok & antrean SPBU terdekat secara live, dilaporkan komunitas, dibaca AI dari foto struk." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f7f9ff; color: #181c20; -webkit-font-smoothing: antialiased; }
+    h1, h2, h3, .font-head { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; }
+    a { text-decoration: none; }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 0 16px; }
+    .nav { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.88); backdrop-filter: blur(8px); border-bottom: 1px solid #e2e8f0; }
+    .nav-inner { max-width: 480px; margin: 0 auto; padding: 0 16px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; }
+    .brand-logo { width: 32px; height: 32px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+    .nav-links { display: none; gap: 20px; font-size: 13px; font-weight: 600; color: #475569; }
+    .nav-links a { color: inherit; }
+    .nav-links a:hover { color: #006194; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 28px; border-radius: 999px; font-size: 14px; font-weight: 700; transition: transform .08s, background .15s, box-shadow .15s; cursor: pointer; border: 0; }
+    .btn:active { transform: scale(.99); }
+    .btn-primary { background: #006194; color: #fff; box-shadow: 0 4px 14px rgba(0,97,148,.25); }
+    .btn-primary:hover { background: #007bb9; box-shadow: 0 6px 20px rgba(0,97,148,.32); }
+    .btn-ghost { background: #fff; color: #1e293b; border: 1px solid #cbd5e1; }
+    .btn-ghost:hover { border-color: #006194; }
+    .btn-sm { height: 36px; padding: 0 16px; font-size: 12px; }
+    .hero { text-align: center; padding: 40px 0 32px; }
+    .hero-grid { display: flex; flex-direction: column; gap: 24px; }
+    .hero-copy { text-align: center; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #006a63; background: #f0fdfa; border: 1px solid #99f6e4; padding: 4px 12px; border-radius: 999px; }
+    .hero h1 { margin-top: 16px; font-size: 28px; line-height: 1.25; font-weight: 800; color: #0f172a; }
+    .hero h1 .red { color: #ee2737; }
+    .hero p.lead { margin-top: 12px; font-size: 14px; color: #475569; line-height: 1.6; }
+    .cta { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .micro { margin-top: 12px; font-size: 11px; color: #94a3b8; }
+    .hero-visual { display: flex; flex-direction: column; gap: 10px; }
+    .mock { background: #0f172a; color: #e2e8f0; border-radius: 20px; padding: 18px; text-align: left; box-shadow: 0 20px 50px rgba(15,23,42,.25); position: relative; overflow: hidden; }
+    .mock::after { content: ''; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px; border-radius: 999px; background: radial-gradient(circle, rgba(0,123,185,.5), transparent 70%); }
+    .mock .row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; margin-top: 8px; font-size: 12px; }
+    .mock .row b { color: #fff; }
+    .mock .badge-live { font-size: 10px; font-weight: 800; color: #5eead4; background: rgba(45,212,191,.12); border: 1px solid rgba(45,212,191,.3); padding: 2px 8px; border-radius: 999px; }
+    .mock .badge-ok { font-size: 10px; font-weight: 800; color: #86efac; }
+    .mock .badge-empty { font-size: 10px; font-weight: 800; color: #fca5a5; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 8px; text-align: center; }
+    .stat b { display: block; font-size: 16px; color: #0f172a; }
+    .stat span { font-size: 10px; color: #64748b; font-weight: 600; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .card h2 { font-size: 15px; font-weight: 800; color: #0f172a; }
+    .prob { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .prob li { list-style: none; display: flex; gap: 10px; align-items: flex-start; }
+    .prob .ic { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; background: #fef2f2; color: #ee2737; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+    .prob p { font-size: 13px; color: #334155; line-height: 1.5; padding-top: 4px; }
+    .sec-title { text-align: center; font-size: 15px; font-weight: 800; margin: 24px 0 12px; }
+    .sec-sub { text-align: center; font-size: 13px; color: #64748b; margin: -6px 0 12px; }
+    .feat { display: flex; flex-direction: column; gap: 10px; }
+    .feat .ic { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .feat .card { transition: transform .15s, box-shadow .15s; }
+    .feat .card:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,97,148,.12); }
+    .feat h3 { margin-top: 10px; font-size: 13px; font-weight: 800; }
+    .feat p { margin-top: 4px; font-size: 12px; color: #475569; line-height: 1.55; }
+    .steps { margin-top: 24px; background: #0f172a; border-radius: 16px; padding: 20px; color: #fff; }
+    .steps h2 { font-size: 15px; font-weight: 800; }
+    .steps ol { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+    .steps li { list-style: none; display: flex; gap: 12px; align-items: flex-start; }
+    .steps .n { width: 28px; height: 28px; flex-shrink: 0; border-radius: 999px; background: rgba(255,255,255,.15); font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+    .steps p { font-size: 13px; color: #cbd5e1; line-height: 1.55; padding-top: 2px; }
+    .tech { margin-top: 24px; text-align: center; }
+    .tech p { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em; }
+    .tech .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+    .tech span { font-size: 11px; font-weight: 700; color: #475569; background: #fff; border: 1px solid #e2e8f0; padding: 4px 12px; border-radius: 999px; }
+    .bottom-cta { margin: 24px 0 8px; text-align: center; }
+    .links { display: flex; justify-content: center; gap: 16px; margin: 12px 0 32px; font-size: 12px; font-weight: 700; }
+    .links a { color: #006194; }
+    footer { border-top: 1px solid #e2e8f0; background: #fff; }
+    footer .wrap { padding-top: 16px; padding-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+    footer p { font-size: 11px; color: #94a3b8; }
+    footer a { font-size: 11px; font-weight: 700; color: #006194; }
+
+    @media (min-width: 900px) {
+      .wrap, .nav-inner { max-width: 1024px; }
+      .nav-inner { height: 64px; }
+      .nav-links { display: flex; }
+      .hero { text-align: left; padding: 64px 0 40px; }
+      .hero-grid { flex-direction: row; align-items: center; gap: 48px; }
+      .hero-copy { flex: 1; text-align: left; }
+      .hero h1 { font-size: 44px; line-height: 1.12; }
+      .hero p.lead { font-size: 16px; max-width: 480px; }
+      .cta { flex-direction: row; }
+      .cta .btn { width: auto; }
+      .hero-visual { flex: 1; }
+      .sec-title { font-size: 22px; margin: 40px 0 8px; }
+      .feat { flex-direction: row; }
+      .feat .card { flex: 1; padding: 24px; }
+      .steps { padding: 32px; border-radius: 24px; margin-top: 40px; }
+      .steps h2 { font-size: 20px; }
+      .steps ol { flex-direction: row; gap: 24px; margin-top: 20px; }
+      .steps li { flex: 1; }
+      .prob { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; margin-top: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="brand"><svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#006194"/><rect x="13" y="16" width="24" height="30" rx="3" fill="#ffffff"/><rect x="17" y="22" width="16" height="10" rx="1.5" fill="#006194"/><rect x="17" y="35" width="16" height="3" rx="1.5" fill="#7cc0e8"/><path d="M37 24h6a4 4 0 0 1 4 4v11" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round"/><rect x="43" y="37" width="6" height="11" rx="2" fill="#ffffff"/><rect x="9" y="48" width="32" height="4" rx="2" fill="#ffffff" opacity="0.85"/></svg> myBBM</div>
+      <nav class="nav-links"><a href="#masalah">Masalah</a><a href="#fitur">Fitur</a><a href="#cara">Cara kerja</a><a href="/api/health">Status API</a></nav>
+      <a class="btn btn-primary btn-sm" href="/">Masuk</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <span class="pill">◉ Peta stok BBM live dari komunitas</span>
+          <h1>Jangan antre 20 menit<br />untuk SPBU yang <span class="red">kosong</span>.</h1>
+          <p class="lead">myBBM menunjukkan stok &amp; antrean SPBU terdekat secara live — dilaporkan komunitas, difoto struknya, dibaca AI.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="/">Masuk dengan Google</a>
+            <a class="btn btn-ghost" href="/">🗺&nbsp; Lihat peta dulu</a>
+          </div>
+          <p class="micro">Gratis — datamu hanya tersimpan di akunmu sendiri</p>
+        </div>
+        <div class="hero-visual">
+          <div class="mock">
+            <span class="badge-live">● LIVE — 5 km di sekitarmu</span>
+            <div class="row"><span>SPBU Pertamina 31.12802<br /><b>Pertalite · 2 menit lalu</b></span><span class="badge-ok">Tersedia</span></div>
+            <div class="row"><span>Shell MT Haryono<br /><b>V-Power · 11 menit lalu</b></span><span class="badge-ok">Sepi</span></div>
+            <div class="row"><span>SPBU Vivo Cawang<br /><b>Revvo 90 · 26 menit lalu</b></span><span class="badge-empty">Habis</span></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>100JT+</b><span>Motor Indonesia</span></div>
+            <div class="stat"><b>&lt;60 mnt</b><span>Data fresh</span></div>
+            <div class="stat"><b>AI</b><span>Scan struk</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="masalah">
+      <h2>Masalahnya nyata</h2>
+      <ul class="prob">
+        <li><span class="ic">◷</span><p>Antre 15–20 menit, ternyata Pertalite habis. Waktu &amp; bensin terbuang.</p></li>
+        <li><span class="ic">✕</span><p>Tidak ada API publik stok BBM real-time — peta cuma tahu lokasi, bukan isi tangki SPBU.</p></li>
+        <li><span class="ic">🧾</span><p>Catat konsumsi manual itu merepotkan — struk langsung dibuang, data hilang.</p></li>
+      </ul>
+    </section>
+
+    <h2 class="sec-title" id="fitur">3 hal yang dilakukan myBBM</h2>
+    <p class="sec-sub">Live map + AI receipt scan + analitik — dijaga skor reputasi anti-spam.</p>
+    <div class="feat">
+      <div class="card"><span class="ic" style="background:#e0f2fe;color:#006194">◎</span><h3>Peta live SPBU</h3><p>Stok &amp; antrean terdekat, cap “x menit lalu”. Tanpa laporan = jujur “belum ada data”.</p></div>
+      <div class="card"><span class="ic" style="background:#ccfbf1;color:#006a63">▣</span><h3>Scan struk AI</h3><p>Foto struk → form terisi otomatis via Gemini. Tiap scan = laporan stok baru.</p></div>
+      <div class="card"><span class="ic" style="background:#fef3c7;color:#b45309">▤</span><h3>Analitik konsumsi</h3><p>km/L, tren 6 bulan, pengingat servis, ekspor CSV untuk armada.</p></div>
+    </div>
+
+    <section class="steps" id="cara">
+      <h2>Cara kerja</h2>
+      <ol>
+        <li><span class="n">1</span><p>Buka peta, lihat SPBU terdekat beserta status stok &amp; antreannya.</p></li>
+        <li><span class="n">2</span><p>Isi BBM, foto struk — AI membaca &amp; mencatat otomatis.</p></li>
+        <li><span class="n">3</span><p>Laporanmu memperbarui peta untuk pengendara lain. Makin aktif, makin dipercaya.</p></li>
+      </ol>
+    </section>
+
+    <section class="tech">
+      <p>Ditenagai</p>
+      <div class="chips"><span>Google Cloud Run</span><span>Gemini AI</span><span>Firebase</span><span>Google Maps</span></div>
+    </section>
+
+    <section class="bottom-cta">
+      <a class="btn btn-primary" href="/">Mulai gratis — masuk dengan Google</a>
+      <div class="links"><a href="/">Buka aplikasi</a><a href="/api/health">Status API</a></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>myBBM — Road to DevFest Jakarta 2026</p>
+      <a href="/">Buka aplikasi →</a>
+    </div>
+  </footer>
+</body>
+</html>
