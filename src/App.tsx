@@ -45,6 +45,7 @@ import { CatatBbmView } from './views/CatatBbmView';
 import { DetailSpbuView } from './views/DetailSpbuView';
 import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
+import { LandingView } from './views/LandingView';
 import { calculateReporterScore, NEW_USER_SCORE, VERIFIED_SCORE_MIN, REPORT_ACTIVITY_STEP, REPORT_COOLDOWN_MS, PENALIZED_COOLDOWN_MS, REJECTED_NET_MAX, REJECTED_PENALTY, peerNetOf } from './utils/reputation';
 import { useUserLocation } from './hooks/useUserLocation';
 import { fetchMapStations, mergeStationsById } from './services/nearbyStations';
@@ -166,6 +167,8 @@ export default function App() {
   );
 
   const [activeTab, setActiveTab] = useState<NavTab>('beranda');
+  // Tamu (belum login) mendarat di landing page dulu — satu deploy, satu URL.
+  const [enteredApp, setEnteredApp] = useState(false);
   const [catatInitialMode, setCatatInitialMode] = useState<'scan' | 'manual'>('scan');
   const [selectedStationDetailId, setSelectedStationDetailId] = useState<string | null>(null);
 
@@ -740,9 +743,13 @@ export default function App() {
   // Tab yang butuh kendaraan aktif — hanya berlaku bila sudah login.
   // Beranda TIDAK hard-block: tanpa kendaraan tetap tampil konten + CTA tambah kendaraan.
   // Tamu tetap bisa buka beranda (versi publik), cek SPBU, dan detail.
-  const isGuest = !currentUser;
-  const needsVehicle =
+  const isGuest = !currentUser;  const needsVehicle =
     !!currentUser && (activeTab === 'catat-bbm' || activeTab === 'statistik');
+
+  // Landing untuk tamu yang belum pencet masuk — link submission = Live URL.
+  if (isGuest && !enteredApp) {
+    return <LandingView onEnter={() => setEnteredApp(true)} onLogin={() => void handleGoogleLogin()} />;
+  }
 
   return (
     <div className="bg-[#f7f9ff] text-[#181c20] min-h-screen flex flex-col antialiased selection:bg-sky-200">
