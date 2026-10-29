@@ -66,17 +66,22 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 
 ## 3. Deploy
 
-### Opsi A — Cloud Build (disarankan, terautomasi via `cloudbuild.yaml`)
+### Opsi A — Cloud Build (disarankan, tanpa paste key)
+
+Isi key sekali di file lokal (gitignored), deploy berikutnya cukup satu perintah:
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml \
-  --substitutions=_GEMINI_API_KEY="AIza...server",_VITE_FIREBASE_API_KEY="...",_VITE_FIREBASE_AUTH_DOMAIN="...",_VITE_FIREBASE_PROJECT_ID="...",_VITE_FIREBASE_STORAGE_BUCKET="...",_VITE_FIREBASE_MESSAGING_SENDER_ID="...",_VITE_FIREBASE_APP_ID="...",_VITE_GOOGLE_MAPS_API_KEY="...",_VITE_GOOGLE_PLACES_API_KEY="..." .
+# Di Cloud Shell / terminal (sekali saja):
+cp .env.deploy.example .env.deploy   # lalu isi semua nilai di dalamnya
+
+# Tiap kali deploy:
+bash deploy.sh
 ```
 
-Deploy ulang berikutnya cukup perintah yang sama (bisa disimpan di script).
-
-> Untuk produksi serius, pindahkan `_GEMINI_API_KEY` ke **Secret Manager**
-> (substitusi tampil di build log). Untuk tahap ini env var biasa acceptable.
+`deploy.sh` otomatis: set project → aktifkan API → simpan `GEMINI_API_KEY`
+ke **Secret Manager** (rotasi tiap deploy, tidak tampil di build log)
+→ `gcloud builds submit` hanya dengan `VITE_*` (publik) → Cloud Run
+mengambil secret via `--set-secrets`. Tidak ada key yang diketik di console.
 
 ### Opsi B — Manual (tanpa cloudbuild.yaml)
 

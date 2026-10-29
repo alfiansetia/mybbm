@@ -31,7 +31,8 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/mybbm:$SHORT_SHA']
 
-  # 3. Deploy ke Cloud Run (secret server hanya sebagai runtime vars)
+  # 3. Deploy ke Cloud Run (secret server diambil dari Secret Manager,
+  #    bukan dari substitutions agar tidak tampil di build log)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -44,12 +45,13 @@ steps:
       - '$_REGION'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'GEMINI_API_KEY=$_GEMINI_API_KEY,GEMINI_MODEL=$_GEMINI_MODEL'
+      - 'GEMINI_MODEL=$_GEMINI_MODEL'
+      - '--set-secrets'
+      - 'GEMINI_API_KEY=mybbm-gemini-key:latest'
 
 substitutions:
   _REGION: asia-southeast2
   _GEMINI_MODEL: gemini-3.8-flash
-  _GEMINI_API_KEY: ''
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_AUTH_DOMAIN: ''
   _VITE_FIREBASE_PROJECT_ID: ''
