@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export interface ReceiptScanResult {
   stationName?: string;
   stationBrand?: string;
+  address?: string;
   fuelType?: string;
   liters?: number;
   pricePerLiter?: number;
@@ -11,6 +12,7 @@ export interface ReceiptScanResult {
   dateTime?: string;
   /** 0–100, seberapa yakin AI membaca struk ini. */
   confidence?: number;
+  transactionNumber?: string;
 }
 
 export type ReceiptScanErrorCode = 'NO_KEY' | 'BAD_IMAGE' | 'AI_ERROR' | 'NO_DATA';
@@ -77,12 +79,14 @@ const PROMPT = `Baca foto struk/bukti pembayaran SPBU Indonesia ini dan kembalik
 {
   "stationName": "nama SPBU persis seperti di struk, cth 'SPBU 31.12802 MT Haryono'",
   "stationBrand": "salah satu: Pertamina, Shell, Vivo, BP, atau Lainnya",
+  "address": "alamat singkat bila terbaca di struk, kalau tidak ada = null",
   "fuelType": "nama BBM, cth Pertalite/Pertamax/Turbo/Dexlite/Shell Super",
   "liters": angka volume liter (cth 3.8),
   "pricePerLiter": angka rupiah per liter tanpa titik/koma (cth 10000),
   "totalAmount": angka total bayar rupiah (cth 38000),
   "paymentMethod": "salah satu: Tunai, QRIS, E-Wallet, Kartu Debit, Kartu Kredit, MyPertamina",
   "dateTime": "waktu transaksi ISO bila terbaca, kalau tidak ada null",
+  "transactionNumber": "nomor transaksi/invoice bila ada, kalau tidak ada = null",
   "confidence": "0-100: keyakinanmu hasil bacaan ini benar"
 }
 Field yang tidak terbaca = null. Jangan mengarang angka. Kalau foto BUKAN struk SPBU, kembalikan {"confidence": 0}.`;

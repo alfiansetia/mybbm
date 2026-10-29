@@ -44,6 +44,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   // Form states
   const [selectedVehicleId, setSelectedVehicleId] = useState(activeVehicle.id);
   const [stationName, setStationName] = useState('');
+  const [stationAddress, setStationAddress] = useState('');
+  const [transactionNumber, setTransactionNumber] = useState('');
   const [stationBrand, setStationBrand] = useState<'Pertamina' | 'Shell' | 'Vivo' | 'BP' | 'Toko Madura' | 'Lainnya'>('Pertamina');
   const [isStationSheetOpen, setIsStationSheetOpen] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -174,6 +176,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     setTimeout(() => {
       if (type === 'pertamina') {
         setStationName('SPBU 31.12802 MT Haryono');
+        setStationAddress('Jl. MT Haryono Kav 18, Jakarta');
+        setTransactionNumber('98402/20261017');
         setStationBrand('Pertamina');
         setFuelType('Pertalite');
         setLiters(3.80);
@@ -184,6 +188,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setScanConfidence(98);
       } else if (type === 'shell') {
         setStationName('Shell MT Haryono');
+        setStationAddress('Jl. MT Haryono Kav 18, Jakarta');
+        setTransactionNumber('SHELL/884102');
         setStationBrand('Shell');
         setFuelType('Shell Super');
         setLiters(3.50);
@@ -194,6 +200,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setScanConfidence(96);
       } else {
         setStationName('SPBU 34.12803 Pancoran');
+        setStationAddress('Jl. Raya Pancoran, Jakarta Selatan');
+        setTransactionNumber('SOLAR/552031');
         setStationBrand('Pertamina');
         setFuelType('Bio Solar');
         setLiters(15.0);
@@ -225,6 +233,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       const { result: d } = await scanReceipt(img.base64, img.mimeType);
 
       if (d.stationName) setStationName(d.stationName);
+      if (d.address) setStationAddress(d.address);
+      if (d.transactionNumber) setTransactionNumber(String(d.transactionNumber));
       // Server bisa jawab 'Other (Toko Madura)' — normalkan ke brand resmi.
       const rawBrand = (d.stationBrand ?? '').trim();
       const brand = /madura/i.test(rawBrand)
@@ -392,8 +402,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
             <div className="w-64 bg-white p-3 rounded-lg shadow-2xl transform rotate-[-1deg] relative font-mono text-[10px] text-slate-800 leading-tight select-none border border-slate-200">
               {/* Receipt Header */}
               <div className="text-center pb-1.5 mb-1.5 bg-slate-50 rounded p-1 border border-slate-100">
-                <p className="font-extrabold text-[#ee2737] tracking-wider truncate">{stationName}</p>
-                <p className="text-[8px] text-slate-400">JL. MT HARYONO KAV 18 JAKARTA</p>
+                <p className="font-extrabold text-[#ee2737] tracking-wider truncate">{stationName || 'NAMA SPBU'}</p>
+                <p className="text-[8px] text-slate-400 truncate px-1">{stationAddress || 'ALAMAT TERBACA DARI STRUK'}</p>
               </div>
 
               {/* OCR Extracted Lines with Bounding highlights */}
@@ -429,8 +439,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 </div>
               </div>
 
-              <div className="mt-1.5 text-center text-[8px] text-slate-400">
-                TRX: 98402/20261017 • {paymentMethod}
+              <div className="mt-1.5 text-center text-[8px] text-slate-400 truncate px-2">
+                TRX: {transactionNumber || '-'} • {paymentMethod}
               </div>
 
               {/* Scanner Sweep Line Animation */}
