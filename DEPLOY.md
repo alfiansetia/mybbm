@@ -112,6 +112,19 @@ gcloud builds triggers create github --repo-owner=alfiansetia --repo-name=mybbm 
 
 Sesudah itu tiap push → build jalan sendiri → revisi baru tayang otomatis.
 
+### Matikan auto-deploy (kembali full manual)
+
+Trigger dan service itu resource terpisah — hapus service tidak menghapus
+trigger (push berikutnya akan membuat service-nya lagi). Untuk murni manual:
+
+```bash
+gcloud builds triggers list --project=mybbm-511903
+gcloud builds triggers delete TRIGGER_ID --project=mybbm-511903
+```
+
+Atau console: Cloud Build → Triggers → centang → Delete. Sesudah itu
+satu-satunya jalan tayang = `bash deploy.sh`.
+
 ### Opsi A — Cloud Build (disarankan, tanpa paste key)
 
 `.env` yang dipakai run lokal itu juga yang dipakai deploy — isi sekali,
