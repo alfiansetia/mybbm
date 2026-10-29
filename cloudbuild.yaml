@@ -4,7 +4,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/mybbm:$SHORT_SHA'
+      - 'gcr.io/$PROJECT_ID/mybbm:$_TAG'
       - '--build-arg'
       - 'VITE_FIREBASE_API_KEY=$_VITE_FIREBASE_API_KEY'
       - '--build-arg'
@@ -29,7 +29,7 @@ steps:
 
   # 2. Push ke Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/mybbm:$SHORT_SHA']
+    args: ['push', 'gcr.io/$PROJECT_ID/mybbm:$_TAG']
 
   # 3. Deploy ke Cloud Run (secret server diambil dari Secret Manager,
   #    bukan dari substitutions agar tidak tampil di build log)
@@ -40,7 +40,7 @@ steps:
       - 'deploy'
       - 'mybbm'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/mybbm:$SHORT_SHA'
+      - 'gcr.io/$PROJECT_ID/mybbm:$_TAG'
       - '--region'
       - '$_REGION'
       - '--allow-unauthenticated'
@@ -51,6 +51,7 @@ steps:
 
 substitutions:
   _REGION: asia-southeast2
+  _TAG: latest
   _GEMINI_MODEL: gemini-3.8-flash
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_AUTH_DOMAIN: ''

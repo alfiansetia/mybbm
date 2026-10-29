@@ -47,8 +47,10 @@ done
 
 # Build + deploy. Hanya VITE_* (publik) yang lewat substitutions;
 # GEMINI_API_KEY diambil Cloud Run langsung dari Secret Manager.
+# NOTE: $SHORT_SHA kosong saat builds submit manual, jadi tag diambil dari git lokal.
+TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
 gcloud builds submit --config cloudbuild.yaml --project="$PROJECT_ID" \
-  --substitutions="_REGION=${REGION},_GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash},"\
+  --substitutions="_REGION=${REGION},_TAG=${TAG},_GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash},"\
 "_VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},"\
 "_VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN},"\
 "_VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID},"\
