@@ -60,14 +60,35 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
    `databaseId` bila pakai DB non-default).
 2. **WAJIB setelah deploy:** Authentication → Settings → **Authorized domains** →
    tambah domain Cloud Run (`xxx.run.app`). Tanpa ini login Google gagal.
-3. Deploy rules (cooldown anti-spam ikut aktif):
+3. Deploy rules (cooldown anti-spam ikut aktif, sekali saja + tiap ubah rules):
    ```bash
+   npm i -g firebase-tools
+   firebase login
+   firebase use --add   # pilih project-mu
    firebase deploy --only firestore:rules
    ```
 
 ---
 
 ## 3. Deploy
+
+### Mulai dari nol (Cloud Shell, clone fresh)
+
+```bash
+# 1. Clone
+rm -rf mybbm && git clone https://github.com/alfiansetia/mybbm.git && cd mybbm
+
+# 2. Buat .env (Editor Cloud Shell → file baru bernama .env),
+#    isi = copy .env lokalmu + pastikan PROJECT_ID terisi.
+#    Semua nilai juga terdokumentasi di .env.example.
+
+# 3. Deploy (urus login, project, API, secret, build — sekaligus)
+bash deploy.sh
+```
+
+Deploy ulang berikutnya: `git pull` lalu `bash deploy.sh` lagi — service yang
+sama ditimpa revisi baru, URL tidak berubah. Tidak perlu hapus service dulu
+(kecuali ganti nama service / pindah region).
 
 ### Opsi A — Cloud Build (disarankan, tanpa paste key)
 
@@ -88,19 +109,38 @@ mengambil secret via `--set-secrets`. Tidak ada key yang diketik di console.
 ### Opsi B — Manual (tanpa cloudbuild.yaml)
 
 ```bash
-# 1. Bake VITE_* dari .env lokal, lalu build image
-docker build \
-  --build-arg VITE_FIREBASE_API_KEY="..." \
-  --build-arg VITE_GOOGLE_MAPS_API_KEY="..." \
-  -t gcr.io/PROJECT_ID/mybbm:v1 .
-docker push gcr.io/PROJECT_ID/mybbm:v1
+# 0. Sekali saja: secret server + izin aksesnya
+printf '%s' "$GEMINI_API_KEY" | gcloud secrets create mybbm-gemini-key \
+  --data-file=- --replication-policy=automatic 2>/dev/null || \
+printf '%s' "$GEMINI_API_KEY" | gcloud secrets versions add mybbm-gemini-key --data-file=-
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+gcloud secrets add-iam-policy-binding mybbm-gemini-key \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 
-# 2. Deploy dengan secret server sebagai runtime var
+# 1. Bake VITE_* dari .env lokal, lalu build + push image
+set -a; source .env; set +a   # bash; di PowerShell isi manual tiap --build-arg
+docker build \
+  --build-arg VITE_FIREBASE_API_KEY="$VITE_FIREBASE_API_KEY" \
+  --build-arg VITE_FIREBASE_AUTH_DOMAIN="$VITE_FIREBASE_AUTH_DOMAIN" \
+  --build-arg VITE_FIREBASE_PROJECT_ID="$VITE_FIREBASE_PROJECT_ID" \
+  --build-arg VITE_FIREBASE_STORAGE_BUCKET="$VITE_FIREBASE_STORAGE_BUCKET" \
+  --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="$VITE_FIREBASE_MESSAGING_SENDER_ID" \
+  --build-arg VITE_FIREBASE_APP_ID="$VITE_FIREBASE_APP_ID" \
+  --build-arg VITE_FIRESTORE_DATABASE_ID="$VITE_FIRESTORE_DATABASE_ID" \
+  --build-arg VITE_GOOGLE_MAPS_API_KEY="$VITE_GOOGLE_MAPS_API_KEY" \
+  --build-arg VITE_GOOGLE_PLACES_API_KEY="$VITE_GOOGLE_PLACES_API_KEY" \
+  --build-arg VITE_GOOGLE_MAPS_MAP_ID="${VITE_GOOGLE_MAPS_MAP_ID:-DEMO_MAP_ID}" \
+  -t gcr.io/"$PROJECT_ID"/mybbm:v1 .
+docker push gcr.io/"$PROJECT_ID"/mybbm:v1
+
+# 2. Deploy: secret diambil dari Secret Manager (jangan paste key di sini)
 gcloud run deploy mybbm \
-  --image gcr.io/PROJECT_ID/mybbm:v1 \
-  --region asia-southeast2 \
+  --image gcr.io/"$PROJECT_ID"/mybbm:v1 \
+  --region "${REGION:-asia-southeast2}" \
   --allow-unauthenticated \
-  --set-env-vars GEMINI_API_KEY="AIza...server",GEMINI_MODEL="gemini-3.8-flash"
+  --set-env-vars GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.8-flash}" \
+  --set-secrets GEMINI_API_KEY=mybbm-gemini-key:latest
 ```
 
 Lihat `Dockerfile` untuk isi build (multi-stage, runtime hanya `server.js` + `dist`).
@@ -111,13 +151,27 @@ Lihat `Dockerfile` untuk isi build (multi-stage, runtime hanya `server.js` + `di
 
 | Cek | Harapan |
 |---|---|
+| Landing (logged-out / incognito) | Hero + CTA Masuk / Lihat peta dulu |
 | Peta + SPBU terdekat | Pin muncul, log `[Places] N SPBU dalam X ms` |
-| Upload struk | Form terisi + confidence (tanpa error key) |
+| Pilih SPBU → ketik nama jalan | Log `[PlacesText] "..." → N SPBU`, hasil merge dengan lokal |
+| Foto struk (kamera) / upload galeri | Form terisi + confidence (tanpa error key) |
+| Contoh struk / isi manual | Tetap jalan walau AI nonaktif |
 | Login Google | Berhasil (authorized domain sudah ditambah) |
 | Lapor → lapor lagi | Tombol "Tunggu M:SS" (cooldown jalan) |
+| Odo lompat tak wajar | Modal konfirmasi, `Tetap Simpan` tetap bisa |
 | `/api/health` | `{"status":"ok","hasGeminiKey":true,...}` |
 
-## 5. Troubleshooting
+## 5. Rollback (kalau revisi baru bermasalah)
+
+Revisi lama tidak dihapus — kembalikan traffic dari console
+(Cloud Run → mybbm → Revisions → kelola traffic) atau via CLI:
+
+```bash
+# Lihat revisi: gcloud run revisions list --service mybbm --region asia-southeast2
+gcloud run services update-traffic mybbm --to-revisions REVISI_LAMA=100 --region asia-southeast2
+```
+
+## 6. Troubleshooting
 
 | Gejala | Penyebab → fix |
 |---|---|
@@ -125,6 +179,9 @@ Lihat `Dockerfile` untuk isi build (multi-stage, runtime hanya `server.js` + `di
 | Peta abu-abu / `ApiNotActivatedMapError` | API belum di-enable atau key salah → §2B. |
 | `REQUEST_DENIED` Places | Key places kena restriction API yang salah → restriction = Places API (New). |
 | Login Google `auth/unauthorized-domain` | Authorized domains belum ditambah → §2C langkah 2. |
-| Scan: `hasGeminiKey: false` | `GEMINI_API_KEY` belum diset sebagai runtime var → deploy ulang dengan `--set-env-vars` / `--update-env-vars`. |
+| Scan: `hasGeminiKey: false` | Secret kosong/salah → cek `gcloud secrets versions access latest --secret=mybbm-gemini-key`, lalu deploy ulang (`bash deploy.sh`) |
+| Scan 403 / permission secret | Service account Cloud Run belum `secretAccessor` → `deploy.sh` mengurus otomatis; manual: lihat Opsi B langkah 0 |
+| Build gagal `PROJECT_ID kosong` | Isi `PROJECT_ID` di `.env` |
+| Firebase `firebase deploy` error | Belum `firebase login` / belum `firebase use --add` → §2C langkah 3 |
 | Scan 404 model | Model pensiun → ganti `GEMINI_MODEL` (lihat error-nya, ia menyebut penggantinya). |
 | Tagihan takut jebol | Billing → Budgets & alerts; Cloud Run min-instances = 0 (default) agar scale-to-zero. |
