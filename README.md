@@ -4,7 +4,7 @@
 - **Live URL:** https://mybbm-773235037448.asia-southeast2.run.app
 - **Landing Page URL:** https://mybbm-773235037448.asia-southeast2.run.app/landing (static checkpoint; onboarding in-app tetap di `/` untuk guest via `src/views/LandingView.tsx`)
 - **Repository:** https://github.com/alfiansetia/mybbm
-- **Short Demo Video (<= 3 min):** [TODO]
+- **Short Demo Video (<= 3 min):** https://youtu.be/KHxfjD562pA
 - **Technical Deep-Dive Video (<= 15 min):** [TODO]
 - **Presentation Deck:** [myBBM Pitch Deck (PDF)](<./myBBM — Pitch Deck Ringkas _ Road to DevFest Jakarta 2026.pdf>) + [HTML Slides](./pitch-deck.html)
 
