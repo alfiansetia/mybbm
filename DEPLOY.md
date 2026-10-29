@@ -151,6 +151,7 @@ Lihat `Dockerfile` untuk isi build (multi-stage, runtime hanya `server.js` + `di
 
 | Cek | Harapan |
 |---|---|
+| Buka URL di incognito (tanpa login Google Cloud) | Langsung terbuka, BUKAN `403 Forbidden` (= service public) |
 | Landing (logged-out / incognito) | Hero + CTA Masuk / Lihat peta dulu |
 | Peta + SPBU terdekat | Pin muncul, log `[Places] N SPBU dalam X ms` |
 | Pilih SPBU → ketik nama jalan | Log `[PlacesText] "..." → N SPBU`, hasil merge dengan lokal |
@@ -176,6 +177,7 @@ gcloud run services update-traffic mybbm --to-revisions REVISI_LAMA=100 --region
 | Gejala | Penyebab → fix |
 |---|---|
 | `Container failed to start` | Cek log: `gcloud run services logs read mybbm --region asia-southeast2`. Umumnya PORT — server sudah pakai `process.env.PORT`, jangan override. |
+| `403 Forbidden` buka URL | Service masih Require authentication → buka akses publik: `gcloud run services add-iam-policy-binding mybbm --member=allUsers --role=roles/run.invoker --region asia-southeast2` (deploy via `deploy.sh`/`cloudbuild.yaml` sudah `--allow-unauthenticated`, jadi ini hanya untuk service lama) |
 | Peta abu-abu / `ApiNotActivatedMapError` | API belum di-enable atau key salah → §2B. |
 | `REQUEST_DENIED` Places | Key places kena restriction API yang salah → restriction = Places API (New). |
 | Login Google `auth/unauthorized-domain` | Authorized domains belum ditambah → §2C langkah 2. |
