@@ -6,7 +6,7 @@
 - **Repository:** https://github.com/alfiansetia/mybbm
 - **Short Demo Video (<= 3 min):** [TODO]
 - **Technical Deep-Dive Video (<= 15 min):** [TODO]
-- **Presentation Deck:** [TODO — link PDF / Slides]
+- **Presentation Deck:** [myBBM Pitch Deck (PDF)](<./myBBM — Pitch Deck Ringkas _ Road to DevFest Jakarta 2026.pdf>) + [HTML Slides](./pitch-deck.html)
 
 ## 1. Problem Statement
 
