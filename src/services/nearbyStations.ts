@@ -133,7 +133,7 @@ export async function fetchNearbyFuelStations(
   } finally {
     controllers.forEach((c) => {
       try {
-        c.abort();
+        c.abort('overpass-loser-aborted');
       } catch {
         // abaikan
       }

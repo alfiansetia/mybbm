@@ -28,6 +28,20 @@ function stripUndefined<T>(value: T): T {
 }
 
 /**
+ * AbortError dari teardown listen (unsubscribe saat snapshot awal masih jalan,
+ * ganti akun, StrictMode double-mount) adalah normal — jangan dilempar ulang
+ * sebagai Uncaught (in promise) dari dalam firebase_firestore.js.
+ */
+function isBenignListenError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { name?: string; code?: string; message?: string };
+  if (e.name === 'AbortError') return true;
+  if (e.code === 'cancelled') return true;
+  if (typeof e.message === 'string' && e.message.includes('signal is aborted')) return true;
+  return false;
+}
+
+/**
  * Real-time subscription to Gas Stations.
  * Koleksi kosong = tetap kosong (tidak ada seed dummy lagi).
  * Dokumen dummy warisan ikut disaring agar tidak tampil di mana pun.
@@ -53,6 +67,7 @@ export function subscribeStations(onUpdate: (stations: GasStation[]) => void): (
         onUpdate(items);
       },
       (error) => {
+        if (isBenignListenError(error)) return;
         handleFirestoreError(error, OperationType.GET, STATIONS_COLLECTION);
       }
     );
@@ -128,6 +143,7 @@ export function subscribeVehicles(
         onUpdate(items);
       },
       (error) => {
+        if (isBenignListenError(error)) return;
         handleFirestoreError(error, OperationType.GET, path);
       }
     );
@@ -189,6 +205,7 @@ export function subscribeLogs(
         onUpdate(items);
       },
       (error) => {
+        if (isBenignListenError(error)) return;
         handleFirestoreError(error, OperationType.GET, path);
       }
     );
@@ -245,6 +262,7 @@ export function subscribeUserProfile(
         }
       },
       (error) => {
+        if (isBenignListenError(error)) return;
         handleFirestoreError(error, OperationType.GET, path);
       }
     );

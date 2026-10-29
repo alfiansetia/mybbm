@@ -164,7 +164,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
     }, hadCache ? 1500 : 600);
     return () => {
       clearTimeout(timer);
-      ctrl.abort();
+      ctrl.abort('cekspbu-stale-fetch');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locStatus, radiusIndex, `${userCoords[0].toFixed(3)},${userCoords[1].toFixed(3)}`]);

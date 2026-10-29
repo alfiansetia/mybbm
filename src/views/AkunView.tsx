@@ -44,7 +44,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
   const [newVehType, setNewVehType] = useState<'motor' | 'mobil'>('motor');
   const [newVehBrand, setNewVehBrand] = useState('Honda');
   const [newVehModel, setNewVehModel] = useState('');
-  const [newVehYear, setNewVehYear] = useState(2024);
+  const [newVehYear, setNewVehYear] = useState(() => new Date().getFullYear());
   const [plateHead, setPlateHead] = useState('B');
   const [plateNum, setPlateNum] = useState('');
   const [plateTail, setPlateTail] = useState('');

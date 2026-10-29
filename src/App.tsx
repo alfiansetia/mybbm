@@ -139,7 +139,7 @@ export default function App() {
       .catch(() => {
         // Gagal total (offline/kuota) — CekSpbuView akan coba lagi dengan cache-nya.
       });
-    return () => ctrl.abort();
+    return () => ctrl.abort('bootstrap-stale-fetch');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootStatus]);
 
@@ -230,7 +230,7 @@ export default function App() {
             isVerified: false,
           };
           console.info('[Reputasi] Profil warisan dinormalkan ke Warga Baru.');
-          saveUserProfileToDb(uid, normalized);
+          saveUserProfileToDb(uid, normalized).catch(() => {});
           setUserProfile({ ...profile, ...normalized });
         } else {
           setUserProfile(profile);
@@ -251,7 +251,7 @@ export default function App() {
           totalReports: 0,
         };
         setUserProfile(newProfile);
-        saveUserProfileToDb(uid, newProfile);
+        saveUserProfileToDb(uid, newProfile).catch(() => {});
       }
     });
 
@@ -308,7 +308,7 @@ export default function App() {
   const handleSelectVehicle = (id: string) => {
     setActiveVehicleId(id);
     if (currentUser) {
-      saveUserProfileToDb(currentUser.uid, { activeVehicleId: id });
+      saveUserProfileToDb(currentUser.uid, { activeVehicleId: id }).catch(() => {});
     }
   };
 
@@ -834,6 +834,7 @@ export default function App() {
             activeVehicle={activeVehicle!}
             allVehicles={vehicles}
             stations={displayStations}
+            lastLog={logs.find((l) => l.vehicleId === activeVehicle?.id) ?? null}
             initialMode={catatInitialMode}
             onSaveLog={handleSaveLog}
             onCancel={() => handleNavigateTab('beranda')}

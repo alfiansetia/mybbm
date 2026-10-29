@@ -18,6 +18,8 @@ interface CatatBbmViewProps {
   activeVehicle: Vehicle;
   allVehicles: Vehicle[];
   stations: GasStation[];
+  /** Pembelian terakhir kendaraan ini — dipakai mengira-ngira jarak wajar. */
+  lastLog?: FuelLog | null;
   initialMode?: 'scan' | 'manual';
   onSaveLog: (newLog: FuelLog) => void;
   onCancel: () => void;
@@ -27,6 +29,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   activeVehicle,
   allVehicles,
   stations,
+  lastLog = null,
   initialMode = 'scan',
   onSaveLog,
   onCancel,
@@ -44,13 +47,32 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [isStationSheetOpen, setIsStationSheetOpen] = useState(false);
   const [dateInput, setDateInput] = useState(() => toDatetimeLocalValue());
   const [isDateSheetOpen, setIsDateSheetOpen] = useState(false);
-  const [fuelType, setFuelType] = useState('Pertalite');
-  const [previousOdo, setPreviousOdo] = useState(activeVehicle.currentOdo > 195 ? activeVehicle.currentOdo - 195 : 0);
+  const [fuelType, setFuelType] = useState(lastLog?.fuelType || 'Pertalite');
+  const [previousOdo, setPreviousOdo] = useState(() => {
+    // Default = odo saat isi terakhir (jarak tinggal selisih kecil perjalanan ini).
+    // Tanpa riwayat → mundur sejauh jarak wajar antar-isi: motor dekat (±45 km),
+    // mobil wajar lebih jauh (±200 km).
+    const cur = activeVehicle.currentOdo || 0;
+    if (lastLog && lastLog.odometer > 0 && lastLog.odometer <= cur) return lastLog.odometer;
+    const fallbackGap = activeVehicle.type === 'motor' ? 45 : 200;
+    return cur > fallbackGap ? cur - fallbackGap : 0;
+  });
   const [currentOdo, setCurrentOdo] = useState(activeVehicle.currentOdo || 0);
   const [isFullTank, setIsFullTank] = useState(true);
-  const [liters, setLiters] = useState(3.80);
-  const [pricePerLiter, setPricePerLiter] = useState(10000);
-  const [totalAmount, setTotalAmount] = useState(38000);
+  // Default volume = full tank kendaraan aktif (bukan hardcode 3.8 L).
+  const [liters, setLiters] = useState(() => {
+    const t = activeVehicle.tankCapacityL;
+    return t && t > 0 ? Number(t.toFixed(2)) : activeVehicle.type === 'motor' ? 5 : 45;
+  });
+  const [pricePerLiter, setPricePerLiter] = useState(
+    lastLog && lastLog.pricePerLiter > 0 ? lastLog.pricePerLiter : 10000
+  );
+  const [totalAmount, setTotalAmount] = useState(() => {
+    const t = activeVehicle.tankCapacityL;
+    const cap = t && t > 0 ? t : activeVehicle.type === 'motor' ? 5 : 45;
+    const price = lastLog && lastLog.pricePerLiter > 0 ? lastLog.pricePerLiter : 10000;
+    return Math.round(cap * price);
+  });
   const [payCategory, setPayCategory] = useState<PaymentCategory>('Non-Tunai');
   const [payDetail, setPayDetail] = useState<string>('QRIS');
   /** Nilai tersimpan ke log: 'Tunai' atau 'Non-Tunai • QRIS'. */
@@ -91,14 +113,30 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         ? 5
         : 45;
   const litersOverCapacity = liters > tankCapacityL;
-  const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
+
+  // Ganti kendaraan di form → volume ngikutin full tank kendaraan baru
+  // (hanya kalau toggle full-tank aktif, biar input manual tidak tertimpa).
+  const prevVehicleIdRef = useRef(selectedVehicleId);
+  useEffect(() => {
+    if (prevVehicleIdRef.current === selectedVehicleId) return;
+    prevVehicleIdRef.current = selectedVehicleId;
+    if (isFullTank) {
+      setLiters(Number(tankCapacityL.toFixed(2)));
+      setTotalAmount(Math.round(tankCapacityL * pricePerLiter));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVehicleId]);  const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
   /**
-   * Jarak wajar maks sekali pengisian: kapasitas × efisiensi super-irit.
-   * Motor 70 km/L (ketat — motor jarang >300 km sekali isi).
-   * Mobil 40 km/L (longgar — 45 L × 40 = 1800 km, Jakarta–Surabaya PP masih lolos;
-   * hanya typo kelebihan digit yang kena).
+   * Jarak wajar maks dihitung dari PEMBELIAN TERAKHIR, bukan kapasitas tangki:
+   * bensin yang dipakai sejak isi sebelumnya ≈ sebanyak yang dibeli kemarin
+   * (metode full-to-full). Tanpa riwayat → fallback kapasitas tangki.
+   * Faktor super-irit: motor 50 km/L, mobil 20 km/L.
+   * Contoh: motor terakhir beli 3.8 L → maks ±190 km; beli 2 L → ±100 km.
    */
-  const maxRangeKm = Math.round(tankCapacityL * (currentVehicle.type === 'motor' ? 70 : 40));
+  const maxRangeKm = Math.round(
+    (lastLog && lastLog.liters > 0 ? lastLog.liters : tankCapacityL) *
+      (currentVehicle.type === 'motor' ? 50 : 20)
+  );
   const distanceTooFar = distanceKm > maxRangeKm;
   const calculatedKmL = isFullTank && distanceKm > 0 && liters > 0 ? Number((distanceKm / liters).toFixed(1)) : undefined;
   const costPerKm = distanceKm > 0 && totalAmount > 0 ? Math.round(totalAmount / distanceKm) : undefined;

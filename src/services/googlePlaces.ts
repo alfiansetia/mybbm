@@ -1,6 +1,7 @@
 import { BrandType, GasStation } from '../types';
 
 const PLACES_URL = 'https://places.googleapis.com/v1/places:searchNearby';
+const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
 // Field Essentials saja (nama, alamat, koordinat, status buka) — paling murah.
 const FIELD_MASK = 'places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus';
 
@@ -58,8 +59,15 @@ export async function fetchGoogleNearbyFuel(
   });
   if (!res.ok) throw new Error(`Places ${res.status}`);
   const json = (await res.json()) as { places?: PlacesApiPlace[] };
+  const stations = mapPlacesToStations(json.places);
+  const ms = Math.round(performance.now() - started);
+  console.info(`[Places] ${stations.length} SPBU dalam ${ms} ms`);
+  return stations;
+}
+
+function mapPlacesToStations(places: PlacesApiPlace[] | undefined): GasStation[] {
   const stations: GasStation[] = [];
-  for (const p of json.places ?? []) {
+  for (const p of places ?? []) {
     const plat = p.location?.latitude;
     const plng = p.location?.longitude;
     if (plat === undefined || plng === undefined) continue;
@@ -88,7 +96,50 @@ export async function fetchGoogleNearbyFuel(
       reports: [],
     });
   }
+  return stations;
+}
+
+/**
+ * Cari SPBU via teks (ketikan user) — Places API (New) searchText.
+ * Dipakai modal "Pilih SPBU" agar query tidak cuma filter cache lokal.
+ * locationBias = lingkaran 20 km dari GPS agar relevan, tapi tetap bisa
+ * menemukan SPBU di luar radius bootstrap 5 km.
+ */
+export async function fetchGoogleTextSearchFuel(
+  query: string,
+  lat: number,
+  lng: number,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<GasStation[]> {
+  const q = query.trim();
+  if (q.length < 3 || !apiKey) return [];
+  const started = performance.now();
+  const res = await fetch(SEARCH_TEXT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': FIELD_MASK,
+    },
+    body: JSON.stringify({
+      textQuery: q.includes('spbu') || q.toLowerCase().includes('shell')
+        ? q
+        : `SPBU ${q}`,
+      includedType: 'gas_station',
+      maxResultCount: 10,
+      locationBias: {
+        circle: { center: { latitude: lat, longitude: lng }, radius: 20000 },
+      },
+      languageCode: 'id',
+      regionCode: 'ID',
+    }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`PlacesText ${res.status}`);
+  const json = (await res.json()) as { places?: PlacesApiPlace[] };
+  const stations = mapPlacesToStations(json.places);
   const ms = Math.round(performance.now() - started);
-  console.info(`[Places] ${stations.length} SPBU dalam ${ms} ms`);
+  console.info(`[PlacesText] "${q}" → ${stations.length} SPBU dalam ${ms} ms`);
   return stations;
 }
