@@ -13,6 +13,9 @@ Free tier Cloud Run (2 jt request/bulan, scale-to-zero) cukup untuk tahap ini.
 
 ## 1. Prasyarat
 
+`bash deploy.sh` sudah mengurus login, set project (dari `PROJECT_ID` di `.env`),
+dan mengaktifkan semua API — bagian bawah ini hanya referensi manual bila perlu:
+
 ```bash
 # Install gcloud CLI lalu login
 gcloud auth login
@@ -20,7 +23,7 @@ gcloud config set project PROJECT_ID_KAMU
 
 # Aktifkan API yang dibutuhkan (sekali saja)
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com
+  artifactregistry.googleapis.com secretmanager.googleapis.com
 
 # Billing wajib aktif (tidak ditagih selama dalam batas gratis).
 # Pasang budget alert: Console → Billing → Budgets & alerts → Rp50.000, 50%/100%.

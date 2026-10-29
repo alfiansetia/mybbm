@@ -16,13 +16,19 @@ set +a
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-asia-southeast2}"
 if [[ -z "${PROJECT_ID:-}" ]]; then
-  echo "PROJECT_ID kosong — isi di .env.deploy atau via: gcloud config set project ID_KAMU"
+  echo "PROJECT_ID kosong — isi di .env atau via: gcloud config set project ID_KAMU"
   exit 1
+fi
+
+# Login bila belum ada akun aktif (pertama kali / mesin baru).
+if ! gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
+  gcloud auth login
 fi
 gcloud config set project "$PROJECT_ID" >/dev/null
 
-# API + izin yang dibutuhkan sekali saja (idempotent).
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com >/dev/null
+# API + izin yang dibutuhkan (sekali saja, idempotent).
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com secretmanager.googleapis.com >/dev/null
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
