@@ -90,6 +90,28 @@ Deploy ulang berikutnya: `git pull` lalu `bash deploy.sh` lagi — service yang
 sama ditimpa revisi baru, URL tidak berubah. Tidak perlu hapus service dulu
 (kecuali ganti nama service / pindah region).
 
+### Auto-deploy tiap push (opsional)
+
+Default-nya deploy manual. Kalau mau tiap `git push` ke `main` tayang sendiri,
+sambungkan repo sekali via Cloud Build Trigger:
+
+**Via console:**
+1. Cloud Build → Triggers → Connect repository (GitHub `alfiansetia/mybbm`).
+2. Create trigger: event Push ke branch `main`, config `cloudbuild.yaml`.
+3. Substitutions: isi semua `VITE_*` + `_GEMINI_MODEL` sekali di trigger.
+   `GEMINI_API_KEY` tidak perlu — diambil dari Secret Manager.
+   Untuk tag image: `_TAG` = `$SHORT_SHA` (built-in, terisi otomatis saat trigger).
+
+**Via CLI:**
+
+```bash
+gcloud builds triggers create github --repo-owner=alfiansetia --repo-name=mybbm \
+  --branch-pattern='^main$' --build-config=cloudbuild.yaml \
+  --substitutions=_TAG='$SHORT_SHA',_VITE_FIREBASE_API_KEY='...',_VITE_FIREBASE_AUTH_DOMAIN='...',_VITE_FIREBASE_PROJECT_ID='...',_VITE_FIREBASE_STORAGE_BUCKET='...',_VITE_FIREBASE_MESSAGING_SENDER_ID='...',_VITE_FIREBASE_APP_ID='...',_VITE_FIRESTORE_DATABASE_ID='...',_VITE_GOOGLE_MAPS_API_KEY='...',_VITE_GOOGLE_PLACES_API_KEY='...',_VITE_GOOGLE_MAPS_MAP_ID='DEMO_MAP_ID',_GEMINI_MODEL='gemini-3.8-flash'
+```
+
+Sesudah itu tiap push → build jalan sendiri → revisi baru tayang otomatis.
+
 ### Opsi A — Cloud Build (disarankan, tanpa paste key)
 
 `.env` yang dipakai run lokal itu juga yang dipakai deploy — isi sekali,
