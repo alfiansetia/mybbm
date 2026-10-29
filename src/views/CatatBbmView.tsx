@@ -236,15 +236,15 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setStationBrand(brand as typeof stationBrand);
       }
       if (d.fuelType) setFuelType(d.fuelType);
-      // Angka AI ikut aturan kapasitas tangki: liter & total di-clamp, bukan ditolak.
+      // Angka AI JANGAN di-clamp ke tangki di sini: biarkan apa adanya agar
+      // user lihat hasil asli. Validasi tangki terjadi saat Simpan
+      // (formError jelas: "melebihi tangki ..."), bukan dipotong diam-diam.
       if (d.liters != null) {
-        const liters = Math.min(Math.max(0, Number(d.liters) || 0), tankCapacityL);
-        setLiters(Number(liters.toFixed(2)));
+        setLiters(Number((Math.max(0, Number(d.liters) || 0)).toFixed(2)));
       }
       if (d.pricePerLiter != null) setPricePerLiter(Math.max(0, Number(d.pricePerLiter) || 0));
       if (d.totalAmount != null) {
-        const cap = Math.round(tankCapacityL * Math.max(0, Number(d.pricePerLiter) || pricePerLiter));
-        setTotalAmount(Math.min(Math.max(0, Number(d.totalAmount) || 0), cap));
+        setTotalAmount(Math.max(0, Math.round(Number(d.totalAmount) || 0)));
       }
       if (d.paymentMethod) applyPayment(d.paymentMethod);
       setScanConfidence(d.confidence != null ? Math.round(Number(d.confidence)) : null);

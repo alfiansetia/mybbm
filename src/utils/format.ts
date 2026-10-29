@@ -77,11 +77,24 @@ export function toDatetimeLocalValue(date: Date = new Date()): string {
   )}:${pad(date.getMinutes())}`;
 }
 
-/** Parse longgar (ISO maupun teks OCR). Gagal = null agar pemanggil pakai fallback. */
+/** Parse longgar (ISO, teks OCR, maupun dd/mm/yyyy khas struk). Gagal = null agar pemanggil pakai fallback. */
 export function parseDateTimeInput(value: string): Date | null {
   if (!value) return null;
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (!Number.isNaN(d.getTime())) return d;
+  // Fallback: "27/10/2021 16:03:41" atau "27-10-2021, 16:03" (sering keluar dari OCR apa adanya).
+  const m = value.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    const day = Number(m[1]);
+    const month = Number(m[2]);
+    const year = Number(m[3]);
+    const hh = Number(m[4] ?? '0');
+    const mm = Number(m[5] ?? '0');
+    const ss = Number(m[6] ?? '0');
+    const parsed = new Date(year, month - 1, day, hh, mm, ss);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
 }
 
 /** Rentang "1–{tgl} {Bln} {thn}" untuk label bulan berjalan. */
