@@ -160,6 +160,7 @@ docker push gcr.io/"$PROJECT_ID"/mybbm:v1
 gcloud run deploy mybbm \
   --image gcr.io/"$PROJECT_ID"/mybbm:v1 \
   --region "${REGION:-asia-southeast2}" \
+  --project="$PROJECT_ID" \
   --allow-unauthenticated \
   --set-env-vars GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.8-flash}" \
   --set-secrets GEMINI_API_KEY=mybbm-gemini-key:latest
@@ -170,6 +171,11 @@ Lihat `Dockerfile` untuk isi build (multi-stage, runtime hanya `server.js` + `di
 ---
 
 ## 4. Verifikasi (buka URL `*.run.app`)
+
+```bash
+# Ambil URL live service:
+gcloud run services describe mybbm --region asia-southeast2 --format='value(status.url)'
+```
 
 | Cek | Harapan |
 |---|---|
