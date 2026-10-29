@@ -5,6 +5,7 @@ import { BrandAvatar } from '../components/BrandAvatar';
 import { Modal } from '../components/Modal';
 import { DateTimePickerSheet } from '../components/DateTimePickerSheet';
 import { StationPickerSheet } from '../components/StationPickerSheet';
+import { CameraCaptureSheet } from '../components/CameraCaptureSheet';
 import { formatKm, formatRupiah, toDatetimeLocalValue, parseDateTimeInput, formatDisplayDate, formatDisplayDateTime, formatRibuan, parseRupiahInput, parseLiterInput } from '../utils/format';
 import { NON_TUNAI_OPTIONS, normalizePaymentMethod, PaymentCategory } from '../utils/payment';
 import {
@@ -45,6 +46,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [stationName, setStationName] = useState('');
   const [stationBrand, setStationBrand] = useState<'Pertamina' | 'Shell' | 'Vivo' | 'BP' | 'Toko Madura' | 'Lainnya'>('Pertamina');
   const [isStationSheetOpen, setIsStationSheetOpen] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [dateInput, setDateInput] = useState(() => toDatetimeLocalValue());
   const [isDateSheetOpen, setIsDateSheetOpen] = useState(false);
   const [fuelType, setFuelType] = useState(lastLog?.fuelType || 'Pertalite');
@@ -205,12 +207,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     }, 600);
   };
 
-  // Upload foto struk → baca langsung via Gemini (tanpa backend).
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
+  // Inti pipeline: File (dari galeri maupun kamera) → preview → scan AI → isi form.
+  const processReceiptFile = async (file: File) => {
     setIsScanning(true);
     setScanError(null);
     try {
@@ -266,6 +264,14 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     } finally {
       setIsScanning(false);
     }
+  };
+
+  // Upload dari galeri → masuk pipeline yang sama dengan hasil jepretan kamera.
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    void processReceiptFile(file);
   };
 
   const handleSave = (bypassOdoCheck = false) => {
@@ -448,16 +454,36 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 onChange={handleFileUpload}
               />
               <button
+                onClick={() => setIsCameraOpen(true)}
+                title="Foto Struk dengan Kamera"
+                aria-label="Foto Struk"
+                type="button"
+                className="w-8 h-8 rounded-full bg-[#006194] text-white flex items-center justify-center hover:bg-[#007bb9] shadow"
+              >
+                <span className="material-symbols-outlined text-[17px]">photo_camera</span>
+              </button>
+              <button
                 onClick={() => fileInputRef.current?.click()}
-                title="Unggah Foto Struk"
+                title="Unggah dari Galeri"
                 aria-label="Unggah Struk"
                 type="button"
                 className="w-8 h-8 rounded-full bg-slate-800/90 text-white flex items-center justify-center hover:bg-slate-700 shadow"
               >
-                <span className="material-symbols-outlined text-[17px]">photo_camera</span>
+                <span className="material-symbols-outlined text-[17px]">upload</span>
               </button>
             </div>
           </div>
+
+          {/* Sheet kamera in-app */}
+          {isCameraOpen && (
+            <CameraCaptureSheet
+              onCapture={(f) => {
+                setIsCameraOpen(false);
+                void processReceiptFile(f);
+              }}
+              onClose={() => setIsCameraOpen(false)}
+            />
+          )}
 
           {/* Quick presets for testing */}
           <div className="bg-slate-900 px-3 py-2 border-t border-slate-800 flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
@@ -506,7 +532,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                   ) : scanBackend === 'off' ? (
                     'Scan AI belum aktif — pakai contoh struk atau isi manual'
                   ) : (
-                    'Upload struk untuk scan AI, atau pakai contoh / isi manual'
+                    'Foto atau upload struk untuk scan AI, atau pakai contoh / isi manual'
                   )}
                 </p>
               </div>
