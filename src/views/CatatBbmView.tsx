@@ -246,7 +246,16 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   };
 
   // Inti pipeline: File (dari galeri maupun kamera) → preview → scan AI → isi form.
+  // Guard spam: tolak panggilan ganda + cooldown 10 detik antar scan.
+  const lastScanAtRef = useRef(0);
   const processReceiptFile = async (file: File) => {
+    if (isScanning) return;
+    const nowMs = Date.now();
+    if (nowMs - lastScanAtRef.current < 10_000) {
+      setScanError('Tunggu sebentar sebelum scan lagi (±10 detik).');
+      return;
+    }
+    lastScanAtRef.current = nowMs;
     setIsScanning(true);
     setScanError(null);
     try {
@@ -514,7 +523,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 title="Foto Struk dengan Kamera"
                 aria-label="Foto Struk"
                 type="button"
-                className="w-8 h-8 rounded-full bg-[#006194] text-white flex items-center justify-center hover:bg-[#007bb9] shadow"
+                disabled={isScanning}
+                className="w-8 h-8 rounded-full bg-[#006194] text-white flex items-center justify-center hover:bg-[#007bb9] shadow disabled:opacity-50 disabled:pointer-events-none"
               >
                 <span className="material-symbols-outlined text-[17px]">photo_camera</span>
               </button>
@@ -523,7 +533,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 title="Unggah dari Galeri"
                 aria-label="Unggah Struk"
                 type="button"
-                className="w-8 h-8 rounded-full bg-slate-800/90 text-white flex items-center justify-center hover:bg-slate-700 shadow"
+                disabled={isScanning}
+                className="w-8 h-8 rounded-full bg-slate-800/90 text-white flex items-center justify-center hover:bg-slate-700 shadow disabled:opacity-50 disabled:pointer-events-none"
               >
                 <span className="material-symbols-outlined text-[17px]">upload</span>
               </button>
@@ -808,7 +819,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
               <div>
                 <p className="text-xs font-bold text-slate-800">Isi Penuh (Full Tank)</p>
                 <p className="text-[10px] text-slate-500">
-                  Wajib aktif untuk kalkulasi konsumsi km/L yang valid
+                  Default ON tiap buka form agar km/L valid (full-to-full). Matikan bila isi
+                  parsial / nominal bebas seperti 3.9 L.
                 </p>
               </div>
             </div>
@@ -946,7 +958,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 Total Pembayaran {inputMode === 'total' ? '• ketik bebas' : '• otomatis'}
               </span>
               <span className="text-[10px] font-bold text-slate-400 tabular-nums">
-                {tankCapacityL} L × {formatRupiah(pricePerLiter)}/L
+                {liters} L × {formatRupiah(pricePerLiter)}/L
               </span>
             </div>
             <div className="flex items-baseline gap-1 mt-0.5">
