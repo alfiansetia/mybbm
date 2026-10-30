@@ -72,9 +72,9 @@ export const initialStations: GasStation[] = [
     verifiedCount: 14,
     fuels: [
       { type: 'Pertalite', ronOrCn: 'RON 90 • Subsidi', price: 10000, status: 'Tersedia', lastUpdated: '8 mnt lalu' },
-      { type: 'Pertamax', ronOrCn: 'RON 92', price: 12950, status: 'Tersedia', lastUpdated: '15 mnt lalu' },
-      { type: 'Pertamax Turbo', ronOrCn: 'RON 98', price: 14400, status: 'Tersedia', lastUpdated: '35 mnt lalu' },
-      { type: 'Dexlite', ronOrCn: 'CN 51', price: 13700, status: 'Tersedia', lastUpdated: '40 mnt lalu' },
+      { type: 'Pertamax', ronOrCn: 'RON 92', price: 15950, status: 'Tersedia', lastUpdated: '15 mnt lalu' },
+      { type: 'Pertamax Turbo', ronOrCn: 'RON 98', price: 19600, status: 'Tersedia', lastUpdated: '35 mnt lalu' },
+      { type: 'Dexlite', ronOrCn: 'CN 51', price: 23700, status: 'Tersedia', lastUpdated: '40 mnt lalu' },
     ],
     reports: [
       {
@@ -114,10 +114,10 @@ export const initialStations: GasStation[] = [
     notes: 'Jalur motor dialihkan ke pulau 2 & 3 saat jam sibuk.',
     fuels: [
       { type: 'Pertalite', ronOrCn: 'RON 90 • Subsidi', price: 10000, status: 'Tersedia', notes: 'Antrean 4-5 motor', lastUpdated: '10 mnt lalu' },
-      { type: 'Pertamax', ronOrCn: 'RON 92', price: 12950, status: 'Tersedia', notes: 'Lancar tanpa antre', lastUpdated: '25 mnt lalu' },
-      { type: 'Pertamax Turbo', ronOrCn: 'RON 98', price: 14400, status: 'Tersedia', notes: 'Semua dispenser aktif', lastUpdated: '1 jam lalu' },
+      { type: 'Pertamax', ronOrCn: 'RON 92', price: 15950, status: 'Tersedia', notes: 'Lancar tanpa antre', lastUpdated: '25 mnt lalu' },
+      { type: 'Pertamax Turbo', ronOrCn: 'RON 98', price: 19600, status: 'Tersedia', notes: 'Semua dispenser aktif', lastUpdated: '1 jam lalu' },
       { type: 'Bio Solar', ronOrCn: 'CN 48 • Subsidi', price: 6800, status: 'Kosong', notes: 'Nosel Ditutup - Truk antre panjang di lajur luar tapi tangki belum datang', lastUpdated: '4 mnt lalu' },
-      { type: 'Dexlite', ronOrCn: 'CN 51', price: 13700, status: 'Tersedia', lastUpdated: '30 mnt lalu' },
+      { type: 'Dexlite', ronOrCn: 'CN 51', price: 23700, status: 'Tersedia', lastUpdated: '30 mnt lalu' },
     ],
     reports: [
       {
@@ -156,8 +156,8 @@ export const initialStations: GasStation[] = [
     verifiedCount: 18,
     fuels: [
       { type: 'Pertalite', ronOrCn: 'RON 90 • Subsidi', price: 10000, status: 'Kosong', notes: 'Pertalite kosong sejak 22 mnt lalu (9 pelapor)', lastUpdated: '22 mnt lalu' },
-      { type: 'Pertamax', ronOrCn: 'RON 92', price: 12950, status: 'Tersedia', notes: 'Ready lancar', lastUpdated: '22 mnt lalu' },
-      { type: 'Dexlite', ronOrCn: 'CN 51', price: 13700, status: 'Tersedia', lastUpdated: '1 jam lalu' },
+      { type: 'Pertamax', ronOrCn: 'RON 92', price: 15950, status: 'Tersedia', notes: 'Ready lancar', lastUpdated: '22 mnt lalu' },
+      { type: 'Dexlite', ronOrCn: 'CN 51', price: 23700, status: 'Tersedia', lastUpdated: '1 jam lalu' },
     ],
     reports: [
       {
@@ -194,9 +194,9 @@ export const initialStations: GasStation[] = [
     contributorsCount: 4,
     verifiedCount: 16,
     fuels: [
-      { type: 'Shell Super', ronOrCn: 'RON 92', price: 13200, status: 'Tersedia', lastUpdated: '25 mnt lalu' },
-      { type: 'Shell V-Power', ronOrCn: 'RON 95', price: 13950, status: 'Kosong', notes: 'Stok V-Power sedang isi ulang', lastUpdated: '30 mnt lalu' },
-      { type: 'Shell V-Diesel', ronOrCn: 'CN 51', price: 14500, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
+      { type: 'Shell Super', ronOrCn: 'RON 92', price: 16130, status: 'Tersedia', lastUpdated: '25 mnt lalu' },
+      { type: 'Shell V-Power', ronOrCn: 'RON 95', price: 19330, status: 'Kosong', notes: 'Stok V-Power sedang isi ulang', lastUpdated: '30 mnt lalu' },
+      { type: 'Shell V-Diesel', ronOrCn: 'CN 51', price: 25420, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
     ],
     reports: [
       {
@@ -233,9 +233,9 @@ export const initialStations: GasStation[] = [
     contributorsCount: 6,
     verifiedCount: 11,
     fuels: [
-      { type: 'BP 92', ronOrCn: 'Setara Pertamax (RON 92)', price: 13100, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
-      { type: 'BP Ultimate', ronOrCn: 'RON 95', price: 13850, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
-      { type: 'BP Diesel', ronOrCn: 'CN 51', price: 14300, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
+      { type: 'BP 92', ronOrCn: 'Setara Pertamax (RON 92)', price: 16130, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
+      { type: 'BP Ultimate', ronOrCn: 'RON 95', price: 19330, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
+      { type: 'BP Diesel', ronOrCn: 'CN 51', price: 25420, status: 'Tersedia', lastUpdated: '45 mnt lalu' },
     ],
     reports: [],
   },
@@ -259,7 +259,7 @@ export const initialStations: GasStation[] = [
     notes: 'Pertamini digital akurat kalibrasi + bensin botol cadangan saat SPBU besar tutup.',
     fuels: [
       { type: 'Pertalite', ronOrCn: 'Eceran Digital', price: 12000, status: 'Tersedia', notes: 'Ready 2 dispenser', lastUpdated: '10 mnt lalu' },
-      { type: 'Pertamax', ronOrCn: 'Eceran Digital', price: 14500, status: 'Tersedia', lastUpdated: '10 mnt lalu' },
+      { type: 'Pertamax', ronOrCn: 'Eceran Digital', price: 17500, status: 'Tersedia', lastUpdated: '10 mnt lalu' },
     ],
     reports: [],
   },

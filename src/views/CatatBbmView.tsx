@@ -8,6 +8,7 @@ import { StationPickerSheet } from '../components/StationPickerSheet';
 import { CameraCaptureSheet } from '../components/CameraCaptureSheet';
 import { formatKm, formatRupiah, toDatetimeLocalValue, parseDateTimeInput, formatDisplayDate, formatDisplayDateTime, formatRibuan, parseRupiahInput, parseLiterInput } from '../utils/format';
 import { NON_TUNAI_OPTIONS, normalizePaymentMethod, PaymentCategory } from '../utils/payment';
+import { getOfficialPrice, FUEL_PRICE_LIST, FUEL_PRICE_UPDATED_AT } from '../data/fuelPrices';
 import {
   prepareReceiptImage,
   scanReceipt,
@@ -51,7 +52,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [dateInput, setDateInput] = useState(() => toDatetimeLocalValue());
   const [isDateSheetOpen, setIsDateSheetOpen] = useState(false);
-  const [fuelType, setFuelType] = useState(lastLog?.fuelType || 'Pertalite');
+  const initialFuel = lastLog?.fuelType || 'Pertamax';
+  const [fuelType, setFuelType] = useState(initialFuel);
+  /** Cara isi: 'volume' -> ketik liter, total otomatis; 'total' -> ketik Rp bayar, liter otomatis. */
+  const [inputMode, setInputMode] = useState<'volume' | 'total'>('volume');
   const [previousOdo, setPreviousOdo] = useState(() => {
     // Default = odo saat isi terakhir (jarak tinggal selisih kecil perjalanan ini).
     // Tanpa riwayat → mundur sejauh jarak wajar antar-isi: motor dekat (±45 km),
@@ -66,17 +70,23 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   // Default volume = full tank kendaraan aktif (bukan hardcode 3.8 L).
   const [liters, setLiters] = useState(() => {
     const t = activeVehicle.tankCapacityL;
-    return t && t > 0 ? Number(t.toFixed(2)) : activeVehicle.type === 'motor' ? 5 : 45;
+    return t && t > 0 ? Number(t.toFixed(3)) : activeVehicle.type === 'motor' ? 5 : 45;
   });
-  const [pricePerLiter, setPricePerLiter] = useState(
-    lastLog && lastLog.pricePerLiter > 0 ? lastLog.pricePerLiter : 10000
-  );
+  const [pricePerLiter, setPricePerLiter] = useState(() => {
+    if (lastLog && lastLog.pricePerLiter > 0) return lastLog.pricePerLiter;
+    return getOfficialPrice(initialFuel) ?? 10000;
+  });
   const [totalAmount, setTotalAmount] = useState(() => {
     const t = activeVehicle.tankCapacityL;
     const cap = t && t > 0 ? t : activeVehicle.type === 'motor' ? 5 : 45;
-    const price = lastLog && lastLog.pricePerLiter > 0 ? lastLog.pricePerLiter : 10000;
+    const price =
+      lastLog && lastLog.pricePerLiter > 0
+        ? lastLog.pricePerLiter
+        : (getOfficialPrice(initialFuel) ?? 10000);
     return Math.round(cap * price);
   });
+  const officialPrice = getOfficialPrice(fuelType);
+  const isPriceCustom = officialPrice != null && pricePerLiter !== officialPrice;
   const [payCategory, setPayCategory] = useState<PaymentCategory>('Non-Tunai');
   const [payDetail, setPayDetail] = useState<string>('QRIS');
   /** Nilai tersimpan ke log: 'Tunai' atau 'Non-Tunai • QRIS'. */
@@ -125,7 +135,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     if (prevVehicleIdRef.current === selectedVehicleId) return;
     prevVehicleIdRef.current = selectedVehicleId;
     if (isFullTank) {
-      setLiters(Number(tankCapacityL.toFixed(2)));
+      setLiters(Number(tankCapacityL.toFixed(3)));
       setTotalAmount(Math.round(tankCapacityL * pricePerLiter));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,12 +155,24 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const calculatedKmL = isFullTank && distanceKm > 0 && liters > 0 ? Number((distanceKm / liters).toFixed(1)) : undefined;
   const costPerKm = distanceKm > 0 && totalAmount > 0 ? Math.round(totalAmount / distanceKm) : undefined;
 
-  // Handle price/volume recalculations (dibatasi kapasitas tangki kendaraan)
-  const maxTotalFor = (price: number) => Math.round(tankCapacityL * Math.max(0, price));
+  // Dua mode input saling mengisi - TANPA clamp diam-diam saat ngetik.
+  // Validasi kapasitas tangki hanya saat Simpan (pesan jelas), biar nominal
+  // bebas seperti Rp43.590 / QRIS tetap bisa dimasukkan.
+  const handleFuelTypeChange = (name: string) => {
+    setFuelType(name);
+    const off = getOfficialPrice(name);
+    if (off != null) {
+      setPricePerLiter(off);
+      if (inputMode === 'volume') {
+        setTotalAmount(Math.round(liters * off));
+      } else if (off > 0) {
+        setLiters(Number((totalAmount / off).toFixed(3)));
+      }
+    }
+  };
 
   const handleLitersChange = (val: number) => {
-    const clamped = Math.min(Math.max(0, val), tankCapacityL);
-    const clean = Number(clamped.toFixed(2));
+    const clean = Number(Math.max(0, val).toFixed(3));
     setLiters(clean);
     setTotalAmount(Math.round(clean * pricePerLiter));
   };
@@ -158,14 +180,22 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const handlePricePerLiterChange = (val: number) => {
     const price = Math.max(0, val);
     setPricePerLiter(price);
-    setTotalAmount(Math.min(Math.round(liters * price), maxTotalFor(price)));
+    if (price > 0) {
+      if (inputMode === 'volume') {
+        setTotalAmount(Math.round(liters * price));
+      } else {
+        setLiters(Number((totalAmount / price).toFixed(3)));
+      }
+    } else if (inputMode === 'volume') {
+      setTotalAmount(0);
+    }
   };
 
   const handleTotalAmountChange = (val: number) => {
-    const clamped = Math.min(Math.max(0, val), maxTotalFor(pricePerLiter));
-    setTotalAmount(clamped);
+    const clean = Math.max(0, Math.round(val));
+    setTotalAmount(clean);
     if (pricePerLiter > 0) {
-      setLiters(Number((clamped / pricePerLiter).toFixed(2)));
+      setLiters(Number((clean / pricePerLiter).toFixed(3)));
     }
   };
 
@@ -179,10 +209,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setStationAddress('Jl. MT Haryono Kav 18, Jakarta');
         setTransactionNumber('98402/20261017');
         setStationBrand('Pertamina');
-        setFuelType('Pertalite');
-        setLiters(3.80);
-        setPricePerLiter(10000);
-        setTotalAmount(38000);
+        setFuelType('Pertamax');
+        setLiters(2.733);
+        setPricePerLiter(15950);
+        setTotalAmount(43590);
         setPayCategory('Non-Tunai');
         setPayDetail('QRIS');
         setScanConfidence(98);
@@ -192,8 +222,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         setTransactionNumber('SHELL/884102');
         setStationBrand('Shell');
         setFuelType('Shell Super');
-        setLiters(3.50);
-        setPricePerLiter(13500);
+        setLiters(2.929);
+        setPricePerLiter(16130);
         setTotalAmount(47250);
         setPayCategory('Non-Tunai');
         setPayDetail('E-Wallet');
@@ -250,7 +280,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       // user lihat hasil asli. Validasi tangki terjadi saat Simpan
       // (formError jelas: "melebihi tangki ..."), bukan dipotong diam-diam.
       if (d.liters != null) {
-        setLiters(Number((Math.max(0, Number(d.liters) || 0)).toFixed(2)));
+        setLiters(Number((Math.max(0, Number(d.liters) || 0)).toFixed(3)));
       }
       if (d.pricePerLiter != null) setPricePerLiter(Math.max(0, Number(d.pricePerLiter) || 0));
       if (d.totalAmount != null) {
@@ -289,23 +319,39 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       setFormError('Pilih SPBU dulu — ketuk kolom Lokasi SPBU.');
       return;
     }
-    if (!(liters > 0)) {
-      setFormError('Isi volume BBM dulu (liter).');
+    if (!(pricePerLiter > 0)) {
+      setFormError('Isi harga per liter dulu (ikut harga resmi).');
       return;
     }
-    if (liters > tankCapacityL) {
+    if (!(liters > 0)) {
+      setFormError(
+        inputMode === 'total'
+          ? 'Isi total bayar dulu (Rp) — liter dihitung otomatis dari harga resmi.'
+          : 'Isi volume BBM dulu (liter).'
+      );
+      return;
+    }
+    if (!(totalAmount > 0)) {
+      setFormError('Isi total pembayaran dulu (Rp).');
+      return;
+    }
+    if (liters > tankCapacityL + 1e-9) {
       setFormError(
         `Volume ${liters} L melebihi tangki ${currentVehicle.name} (${tankCapacityL} L). Cek liternya atau ubah kapasitas di menu Akun → Garasi.`
       );
       return;
     }
-    if (totalAmount > Math.round(tankCapacityL * pricePerLiter)) {
-      setFormError(
-        `Total ${formatRupiah(totalAmount)} melebihi batas ${formatRupiah(tankCapacityL * pricePerLiter)} (${tankCapacityL} L × ${formatRupiah(pricePerLiter)}/L).`
-      );
-      return;
-    }
     setFormError(null);
+    // Samakan angka sesuai mode biar konsisten: volume->total dibulatkan, total->liter 3 desimal.
+    // Contoh: Rp43.590 / Rp15.950 = 2,733 L tetap lolos walau bukan full tank.
+    const finalLiters =
+      inputMode === 'total' && pricePerLiter > 0
+        ? Number((totalAmount / pricePerLiter).toFixed(3))
+        : Number(liters);
+    const finalTotal =
+      inputMode === 'volume'
+        ? Math.round(Number(liters) * Number(pricePerLiter))
+        : Math.round(Number(totalAmount));
     if (!bypassOdoCheck && currentOdo < previousOdo) {
       setOdoWarnKind('lower');
       setShowOdoWarningModal(true);
@@ -331,9 +377,9 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       previousOdo: Number(previousOdo),
       distanceKm,
       isFullTank,
-      liters: Number(liters),
+      liters: finalLiters,
       pricePerLiter: Number(pricePerLiter),
-      totalAmount: Number(totalAmount),
+      totalAmount: finalTotal,
       paymentMethod,
       calculatedKmL,
       costPerKm,
@@ -412,7 +458,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                   <span className="font-bold text-slate-600">PRODUK :</span>
                   <span className="font-extrabold text-[#006194]">{fuelType.toUpperCase()}</span>
                   <span className="absolute -top-1.5 -right-1 bg-[#006a63] text-white px-1 rounded-full text-[7px] font-bold">
-                    RON 90
+                    {(FUEL_PRICE_LIST.find((f) => f.name.toLowerCase() === fuelType.toLowerCase())?.ron ?? '').toUpperCase() || 'BBM'}
                   </span>
                 </div>
 
@@ -504,14 +550,14 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 onClick={() => handleApplyPresetReceipt('pertamina')}
                 className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 text-[10px] font-semibold shrink-0"
               >
-                Pertamina Rp38k
+                Pertamax Rp43,6k
               </button>
               <button
                 type="button"
                 onClick={() => handleApplyPresetReceipt('shell')}
                 className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] font-semibold shrink-0"
               >
-                Shell Rp47k
+                Shell Rp47,2k
               </button>
               <button
                 type="button"
@@ -664,40 +710,42 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           />
         )}
 
-        {/* Jenis Bahan Bakar Selector */}
+        {/* Jenis Bahan Bakar Selector - harga resmi Okt 2026 */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-700">Jenis Bahan Bakar</label>
-            <span className="text-[10px] text-[#006a63] font-semibold flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-[13px]">done_all</span> Terverifikasi Struk
-            </span>
+            <span className="text-[10px] text-slate-400 font-semibold">Resmi {FUEL_PRICE_UPDATED_AT}</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {[
-              { name: 'Pertalite', ron: 'RON 90' },
-              { name: 'Pertamax', ron: 'RON 92' },
-              { name: 'Turbo', ron: 'RON 98' },
-            ].map((f) => {
-              const isSelected = fuelType.toLowerCase().includes(f.name.toLowerCase());
+            {FUEL_PRICE_LIST.filter((f) => !f.brand).map((f) => {
+              const isSelected = fuelType.toLowerCase() === f.name.toLowerCase();
               return (
                 <button
                   key={f.name}
                   type="button"
-                  onClick={() => setFuelType(f.name)}
+                  onClick={() => handleFuelTypeChange(f.name)}
                   className={`flex flex-col items-center justify-center p-2 rounded-lg transition-transform active:scale-95 border ${
                     isSelected
                       ? 'bg-[#006194] text-white border-[#006194] shadow-sm'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  <span className="text-xs font-bold">{f.name}</span>
-                  <span className={`text-[10px] ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
+                  <span className="text-[11px] font-bold leading-tight text-center">{f.name}</span>
+                  <span className={`text-[9px] ${isSelected ? 'text-sky-200' : 'text-slate-400'}`}>
                     {f.ron}
+                  </span>
+                  <span
+                    className={`text-[10px] font-extrabold tabular-nums ${isSelected ? 'text-white' : 'text-[#006194]'}`}
+                  >
+                    {formatRibuan(f.price)}
                   </span>
                 </button>
               );
             })}
           </div>
+          <p className="text-[10px] text-slate-400">
+            Pilih BBM — harga/L otomatis ikut harga resmi. Masih bisa diubah manual bila SPBU beda.
+          </p>
         </div>
 
         {/* Odometer Tracking & Delta Calculation */}
@@ -776,12 +824,49 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           </div>
         </div>
 
-        {/* Volume, Harga & Total Pembayaran */}
+        {/* Volume, Harga & Total Pembayaran - 2 mode input */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2.5">
+          {/* Toggle cara isi */}
+          <div className="bg-slate-200/80 p-1 rounded-full flex items-center">
+            <button
+              type="button"
+              onClick={() => setInputMode('volume')}
+              className={`flex-1 py-1.5 rounded-full text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                inputMode === 'volume' ? 'bg-white text-[#006194] shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">local_gas_station</span>
+              <span>Isi per Liter</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode('total')}
+              className={`flex-1 py-1.5 rounded-full text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                inputMode === 'total' ? 'bg-white text-[#006194] shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">payments</span>
+              <span>Isi per Total Rp</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-500 bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
+            {inputMode === 'volume'
+              ? `Ketik liter — total otomatis (${formatRupiah(pricePerLiter)}/L).`
+              : `Ketik total bayar mis. 43.590 — liter otomatis (${formatRupiah(pricePerLiter)}/L). Cocok untuk bayar QRIS nominal bebas.`}
+          </p>
+
           <div className="grid grid-cols-2 gap-2.5">
-            <div className={`border p-2.5 rounded-lg ${litersOverCapacity ? 'bg-red-50 border-red-300' : 'bg-slate-50 border-slate-200'}`}>
+            <div
+              className={`border p-2.5 rounded-lg ${
+                litersOverCapacity
+                  ? 'bg-red-50 border-red-300'
+                  : inputMode === 'volume'
+                    ? 'bg-sky-50 border-sky-300'
+                    : 'bg-slate-50 border-slate-200'
+              }`}
+            >
               <span className="text-[10px] font-bold text-slate-500 flex items-center justify-between mb-1">
-                <span>Volume BBM</span>
+                <span>Volume BBM {inputMode === 'volume' ? '• ketik' : '• otomatis'}</span>
                 <span className="text-[#006194]">⛽ {tankCapacityL} L</span>
               </span>
               <div className="flex items-baseline justify-between">
@@ -790,12 +875,15 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                   inputMode="decimal"
                   value={liters === 0 ? '' : String(liters)}
                   placeholder="0"
+                  readOnly={inputMode !== 'volume'}
                   onChange={(e) => handleLitersChange(parseLiterInput(e.target.value))}
-                  className="w-full bg-transparent text-base font-extrabold text-slate-900 tabular-nums focus:outline-none"
+                  className={`w-full bg-transparent text-base font-extrabold tabular-nums focus:outline-none ${
+                    inputMode !== 'volume' ? 'text-[#006194]' : 'text-slate-900'
+                  }`}
                 />
                 <span className="text-xs font-bold text-slate-400">Liter</span>
               </div>
-              {isFullTank ? (
+              {isFullTank && inputMode === 'volume' ? (
                 <button
                   type="button"
                   onClick={() => handleLitersChange(tankCapacityL)}
@@ -807,11 +895,21 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 <p className="mt-1 text-[10px] font-bold text-red-600">
                   Melebihi tangki {currentVehicle.name} ({tankCapacityL} L)
                 </p>
+              ) : inputMode !== 'volume' ? (
+                <p className="mt-1 text-[10px] text-slate-400 tabular-nums">
+                  = {formatRupiah(totalAmount)} ÷ {formatRupiah(pricePerLiter)}
+                </p>
               ) : null}
             </div>
 
-            <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg">
-              <span className="text-[10px] font-bold text-slate-500 block mb-1">Harga per Liter</span>
+            <div
+              className={`border p-2.5 rounded-lg ${
+                inputMode === 'total' ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <span className="text-[10px] font-bold text-slate-500 block mb-1">
+                Harga per Liter {officialPrice != null ? `• resmi ${formatRupiah(officialPrice)}` : ''}
+              </span>
               <div className="flex items-baseline justify-between">
                 <input
                   type="text"
@@ -823,17 +921,32 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 />
                 <span className="text-[10px] font-bold text-slate-400">Rp/L</span>
               </div>
+              {isPriceCustom && officialPrice != null ? (
+                <button
+                  type="button"
+                  onClick={() => handlePricePerLiterChange(officialPrice)}
+                  className="mt-1 text-[10px] font-bold text-[#006194] underline"
+                >
+                  Pakai harga resmi {formatRupiah(officialPrice)}
+                </button>
+              ) : (
+                <p className="mt-1 text-[10px] text-slate-400">Harga resmi {FUEL_PRICE_UPDATED_AT}</p>
+              )}
             </div>
           </div>
 
           {/* Total Bayar Box */}
-          <div className="bg-slate-100 border border-slate-200/90 p-3 rounded-lg">
+          <div
+            className={`border p-3 rounded-lg ${
+              inputMode === 'total' ? 'bg-sky-50 border-sky-300' : 'bg-slate-100 border-slate-200/90'
+            }`}
+          >
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Total Pembayaran
+                Total Pembayaran {inputMode === 'total' ? '• ketik bebas' : '• otomatis'}
               </span>
               <span className="text-[10px] font-bold text-slate-400 tabular-nums">
-                Maks {formatRupiah(tankCapacityL * pricePerLiter)}
+                {tankCapacityL} L × {formatRupiah(pricePerLiter)}/L
               </span>
             </div>
             <div className="flex items-baseline gap-1 mt-0.5">
@@ -842,13 +955,16 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 type="text"
                 inputMode="numeric"
                 value={formatRibuan(totalAmount)}
-                placeholder="0"
+                placeholder="cth 43.590"
+                readOnly={inputMode !== 'total'}
                 onChange={(e) => handleTotalAmountChange(parseRupiahInput(e.target.value))}
                 className="w-full bg-transparent text-lg font-extrabold text-[#006194] tabular-nums focus:outline-none"
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-              {tankCapacityL} L × {formatRupiah(pricePerLiter)}/L — tidak bisa lebih dari kapasitas {currentVehicle.name}
+              {inputMode === 'total'
+                ? `${formatRupiah(totalAmount)} ÷ ${formatRupiah(pricePerLiter)}/L = ${liters} L — bebas nominal QRIS, validasi tangki saat Simpan.`
+                : `${liters} L × ${formatRupiah(pricePerLiter)}/L = ${formatRupiah(totalAmount)} — pindah ke "Isi per Total Rp" untuk ketik nominal bebas.`}
             </p>
           </div>
 
