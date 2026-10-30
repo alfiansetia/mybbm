@@ -15,6 +15,7 @@ set +a
 
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-asia-southeast2}"
+SERVICE_NAME="${SERVICE_NAME:-mybbm}"
 if [[ -z "${PROJECT_ID:-}" ]]; then
   echo "PROJECT_ID kosong — isi di .env atau via: gcloud config set project ID_KAMU"
   exit 1
@@ -50,7 +51,7 @@ done
 # NOTE: $SHORT_SHA kosong saat builds submit manual, jadi tag diambil dari git lokal.
 TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
 gcloud builds submit --config cloudbuild.yaml --project="$PROJECT_ID" \
-  --substitutions="_REGION=${REGION},_TAG=${TAG},_GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash},"\
+  --substitutions="_REGION=${REGION},_TAG=${TAG},_SERVICE_NAME=${SERVICE_NAME},_GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash},"\
 "_VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY},"\
 "_VITE_FIREBASE_AUTH_DOMAIN=${VITE_FIREBASE_AUTH_DOMAIN},"\
 "_VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID},"\
@@ -63,3 +64,9 @@ gcloud builds submit --config cloudbuild.yaml --project="$PROJECT_ID" \
 "_VITE_GOOGLE_MAPS_MAP_ID=${VITE_GOOGLE_MAPS_MAP_ID:-DEMO_MAP_ID}" .
 
 echo "Selesai — cek URL layanan di atas, lalu verifikasi /api/health."
+echo ""
+echo "== URL Layanan =="
+SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')"
+echo "URL:    $SERVICE_URL"
+echo "Health: ${SERVICE_URL}/api/health"
+curl -fsS --max-time 15 "${SERVICE_URL}/api/health" && echo "" || echo "(peringatan: /api/health belum OK — tunggu sebentar lalu curl manual)"

@@ -38,7 +38,7 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'mybbm'
+      - '$_SERVICE_NAME'
       - '--image'
       - 'gcr.io/$PROJECT_ID/mybbm:$_TAG'
       - '--region'
@@ -52,6 +52,7 @@ steps:
 substitutions:
   _REGION: asia-southeast2
   _TAG: latest
+  _SERVICE_NAME: mybbm
   _GEMINI_MODEL: gemini-3.8-flash
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_AUTH_DOMAIN: ''
