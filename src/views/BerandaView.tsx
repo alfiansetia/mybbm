@@ -17,6 +17,8 @@ interface BerandaViewProps {
   onOpenReportModal: (stationId?: string) => void;
   onExportData: () => void;
   onChangeVehicle: () => void;
+  onOpenRiwayat: () => void;
+  onSelectLog: (logId: string) => void;
   onDeleteLog?: (logId: string) => void;
 }
 
@@ -29,6 +31,8 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   onOpenReportModal,
   onExportData,
   onChangeVehicle,
+  onOpenRiwayat,
+  onSelectLog,
 }) => {
   // Filter logs for active vehicle
   const vehicleLogs = logs.filter((l) => l.vehicleId === activeVehicle.id);
@@ -394,7 +398,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
             <h2 className="text-[16px] font-bold text-slate-800 font-headline">Riwayat Pengisian BBM</h2>
           </div>
           <button
-            onClick={() => onNavigateTab('statistik')}
+            onClick={onOpenRiwayat}
             className="text-[12px] text-[#006194] font-semibold hover:underline"
             type="button"
           >
@@ -403,9 +407,11 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
         </div>
 
         {vehicleLogs.slice(0, 3).map((log) => (
-          <div
+          <button
             key={log.id}
-            className="rounded-xl bg-white p-3.5 border border-slate-200/80 shadow-sm flex flex-col gap-2"
+            onClick={() => onSelectLog(log.id)}
+            type="button"
+            className="text-left rounded-xl bg-white p-3.5 border border-slate-200/80 shadow-sm flex flex-col gap-2 cursor-pointer hover:border-sky-300 transition-all active:scale-[0.99]"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-1.5">
@@ -447,11 +453,16 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                   </span>
                 )}
               </div>
-              {log.costPerKm && (
+              {log.costPerKm ? (
                 <span className="text-[#006a63] font-semibold">{formatRupiah(log.costPerKm)}/km</span>
+              ) : (
+                <span className="text-[#006194] font-bold flex items-center gap-0.5">
+                  <span>Detail</span>
+                  <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+                </span>
               )}
             </div>
-          </div>
+          </button>
         ))}
       </section>
     </div>

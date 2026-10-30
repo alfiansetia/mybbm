@@ -156,12 +156,14 @@ export function subscribeVehicles(
 }
 
 /**
- * Save or update vehicle
+ * Save or update vehicle.
+ * stripUndefined wajib: AkunView ngirim `tankCapacityL: ... || undefined`
+ * (kolom dikosongkan) — Firestore nolak field undefined.
  */
 export async function saveVehicleToDb(vehicle: Vehicle & { userId: string }): Promise<void> {
   const path = `${VEHICLES_COLLECTION}/${vehicle.id}`;
   try {
-    await setDoc(doc(db, VEHICLES_COLLECTION, vehicle.id), vehicle, { merge: true });
+    await setDoc(doc(db, VEHICLES_COLLECTION, vehicle.id), stripUndefined(vehicle), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -218,12 +220,16 @@ export function subscribeLogs(
 }
 
 /**
- * Save or update fuel log
+ * Save or update fuel log.
+ * stripUndefined wajib: `calculatedKmL` / `costPerKm` (dan turunan edit)
+ * bernilai undefined saat jarak 0 / isi parsial — Firestore nolak field
+ * undefined ("Unsupported field value"), tulis gagal, data ra mlebu DB
+ * padahal UI wis optimis nampilke.
  */
 export async function saveLogToDb(log: FuelLog & { userId: string }): Promise<void> {
   const path = `${LOGS_COLLECTION}/${log.id}`;
   try {
-    await setDoc(doc(db, LOGS_COLLECTION, log.id), log, { merge: true });
+    await setDoc(doc(db, LOGS_COLLECTION, log.id), stripUndefined(log), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -283,7 +289,7 @@ export async function saveUserProfileToDb(
 ): Promise<void> {
   const path = `${USERS_COLLECTION}/${userId}`;
   try {
-    await setDoc(doc(db, USERS_COLLECTION, userId), { id: userId, ...profile }, { merge: true });
+    await setDoc(doc(db, USERS_COLLECTION, userId), stripUndefined({ id: userId, ...profile }), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

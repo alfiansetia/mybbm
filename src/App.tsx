@@ -42,6 +42,8 @@ import { BerandaView } from './views/BerandaView';
 import { GuestBerandaView } from './views/GuestBerandaView';
 import { CekSpbuView } from './views/CekSpbuView';
 import { CatatBbmView } from './views/CatatBbmView';
+import { RiwayatView } from './views/RiwayatView';
+import { LogDetailView } from './views/LogDetailView';
 import { DetailSpbuView } from './views/DetailSpbuView';
 import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
@@ -171,6 +173,12 @@ export default function App() {
   const [enteredApp, setEnteredApp] = useState(false);
   const [catatInitialMode, setCatatInitialMode] = useState<'scan' | 'manual'>('scan');
   const [selectedStationDetailId, setSelectedStationDetailId] = useState<string | null>(null);
+  // Riwayat: sub-halaman Beranda (daftar semua log + detail per catatan).
+  const [showRiwayat, setShowRiwayat] = useState(false);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  // Banner sukses di detail — hanya untuk catatan yang baru saja disimpan/diubah.
+  const [justSavedLogId, setJustSavedLogId] = useState<string | null>(null);
+  const [riwayatNotice, setRiwayatNotice] = useState<string | null>(null);
 
   // Migrasi sekali: buang cache dummy versi lama (seed Budi Santoso dkk).
   // Cache stations dipertahankan karena itu data publik.
@@ -320,7 +328,23 @@ export default function App() {
       setCatatInitialMode(mode);
     }
     setSelectedStationDetailId(null);
+    setSelectedLogId(null);
+    setJustSavedLogId(null);
+    setShowRiwayat(false);
     setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenRiwayat = () => {
+    setSelectedLogId(null);
+    setJustSavedLogId(null);
+    setShowRiwayat(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectLog = (logId: string) => {
+    setJustSavedLogId(null);
+    setSelectedLogId(logId);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -329,7 +353,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Add new fuel log and save to Firestore (hanya saat login + ada kendaraan aktif)
+  // Add new fuel log and save to Firestore (hanya saat login + ada kendaraan aktif).
+  // Langsung buka detail catatan yang baru disimpan — user bisa cek, ubah, atau hapus.
   const handleSaveLog = async (newLog: FuelLog) => {
     if (!currentUser || !activeVehicle) return;
     setLogs((prev) => [newLog, ...prev]);
@@ -354,6 +379,31 @@ export default function App() {
     }
 
     setActiveTab('beranda');
+    setShowRiwayat(true);
+    setSelectedLogId(newLog.id);
+    setJustSavedLogId(newLog.id);
+  };
+
+  // Ubah nominal catatan (liter/harga/total/metode/catatan) + simpan ke Firestore.
+  // Banner sukses tidak dinyalakan ulang — toast "Perubahan disimpan" sudah cukup.
+  const handleUpdateLog = async (updated: FuelLog) => {
+    setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    if (currentUser) {
+      await saveLogToDb({ ...updated, userId: currentUser.uid });
+    }
+  };
+
+  // Hapus satu catatan + kembali ke daftar riwayat.
+  const handleDeleteLog = async (logId: string) => {
+    setLogs((prev) => prev.filter((l) => l.id !== logId));
+    setSelectedLogId(null);
+    setJustSavedLogId(null);
+    setShowRiwayat(true);
+    setRiwayatNotice('Catatan dihapus.');
+    setTimeout(() => setRiwayatNotice(null), 3000);
+    if (currentUser) {
+      await deleteLogFromDb(logId);
+    }
   };
 
   // Community reporting and write to Firestore (wajib login)
@@ -692,6 +742,10 @@ export default function App() {
     setVehicles([]);
     setActiveVehicleId(null);
     setLogs([]);
+    setShowRiwayat(false);
+    setSelectedLogId(null);
+    setJustSavedLogId(null);
+    setRiwayatNotice(null);
 
     ['mybbm_vehicles', 'mybbm_active_vehicle', 'mybbm_logs', 'mybbm_user'].forEach((k) =>
       localStorage.removeItem(k)
@@ -714,6 +768,10 @@ export default function App() {
       setVehicles([]);
       setActiveVehicleId(null);
       setLogs([]);
+      setShowRiwayat(false);
+      setSelectedLogId(null);
+      setJustSavedLogId(null);
+      setRiwayatNotice(null);
       setUserProfile(GUEST_PROFILE);
       ['mybbm_vehicles', 'mybbm_active_vehicle', 'mybbm_logs', 'mybbm_user'].forEach((k) =>
         localStorage.removeItem(k)
@@ -731,10 +789,16 @@ export default function App() {
   );
 
   const selectedStation = displayStations.find((s) => s.id === selectedStationDetailId);
+  const selectedLog = selectedLogId ? logs.find((l) => l.id === selectedLogId) ?? null : null;
+  const selectedLogVehicle = selectedLog
+    ? (vehicles.find((v) => v.id === selectedLog.vehicleId) ?? activeVehicle)
+    : null;
 
   // Subtitle for header
   let subtitle = 'Beranda';
-  if (selectedStationDetailId) subtitle = 'Detail SPBU';
+  if (selectedLog) subtitle = 'Detail Pengisian';
+  else if (showRiwayat) subtitle = 'Riwayat Pengisian';
+  else if (selectedStationDetailId) subtitle = 'Detail SPBU';
   else if (activeTab === 'cek-spbu') subtitle = 'Cek SPBU & Stok';
   else if (activeTab === 'catat-bbm') subtitle = 'Catat Pengisian';
   else if (activeTab === 'statistik') subtitle = 'Statistik & Analisis';
@@ -776,6 +840,44 @@ export default function App() {
             onSubmitReport={handleSubmitReport}
             onVoteReport={handleVoteReport}
           />
+        ) : selectedLog && selectedLogVehicle ? (
+          <LogDetailView
+            log={selectedLog}
+            vehicle={selectedLogVehicle}
+            justSaved={justSavedLogId === selectedLog.id}
+            onBack={() => {
+              setSelectedLogId(null);
+              setJustSavedLogId(null);
+            }}
+            onUpdateLog={handleUpdateLog}
+            onDeleteLog={handleDeleteLog}
+          />
+        ) : showRiwayat ? (
+          !currentUser ? (
+            <RequireLogin
+              title="Riwayat perlu login"
+              hint="Masuk untuk melihat riwayat pengisian BBM-mu."
+              icon="receipt_long"
+              onLogin={handleGoogleLogin}
+            />
+          ) : !activeVehicle ? (
+            <EmptyState
+              icon="two_wheeler"
+              title="Belum ada kendaraan"
+              hint="Tambahkan kendaraan pertamamu untuk mulai mencatat pengisian BBM."
+              actionLabel="Tambah Kendaraan"
+              onAction={() => handleNavigateTab('akun')}
+            />
+          ) : (
+            <RiwayatView
+              vehicle={activeVehicle}
+              logs={logs}
+              notice={riwayatNotice}
+              onSelectLog={handleSelectLog}
+              onBack={() => setShowRiwayat(false)}
+              onCatat={() => handleNavigateTab('catat-bbm', 'manual')}
+            />
+          )
         ) : isGuest && (activeTab === 'catat-bbm' || activeTab === 'statistik') ? (
           <RequireLogin
             title={activeTab === 'catat-bbm' ? 'Catat BBM perlu login' : 'Statistik perlu login'}
@@ -811,6 +913,8 @@ export default function App() {
               stations={displayStations}
               onNavigateTab={handleNavigateTab}
               onSelectStation={handleSelectStation}
+              onOpenRiwayat={handleOpenRiwayat}
+              onSelectLog={handleSelectLog}
               onOpenReportModal={(stationId) => {
                 if (stationId) {
                   handleSelectStation(stationId);
@@ -870,8 +974,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Fixed Bottom Navigation (hidden when in Detail view so bottom actions take prominence) */}
-      {!selectedStationDetailId && (
+      {/* Fixed Bottom Navigation (hidden in Detail views so bottom actions take prominence) */}
+      {!selectedStationDetailId && !selectedLogId && (
         <BottomNav activeTab={activeTab} onChangeTab={handleNavigateTab} />
       )}
     </div>

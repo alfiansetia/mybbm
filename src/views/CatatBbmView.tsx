@@ -23,7 +23,7 @@ interface CatatBbmViewProps {
   /** Pembelian terakhir kendaraan ini — dipakai mengira-ngira jarak wajar. */
   lastLog?: FuelLog | null;
   initialMode?: 'scan' | 'manual';
-  onSaveLog: (newLog: FuelLog) => void;
+  onSaveLog: (newLog: FuelLog) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -55,7 +55,6 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const initialFuel = lastLog?.fuelType || 'Pertamax';
   const [fuelType, setFuelType] = useState(initialFuel);
   /** Cara isi: 'volume' -> ketik liter, total otomatis; 'total' -> ketik Rp bayar, liter otomatis. */
-  const [inputMode, setInputMode] = useState<'volume' | 'total'>('volume');
   const [previousOdo, setPreviousOdo] = useState(() => {
     // Default = odo saat isi terakhir (jarak tinggal selisih kecil perjalanan ini).
     // Tanpa riwayat → mundur sejauh jarak wajar antar-isi: motor dekat (±45 km),
@@ -155,19 +154,16 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const calculatedKmL = isFullTank && distanceKm > 0 && liters > 0 ? Number((distanceKm / liters).toFixed(1)) : undefined;
   const costPerKm = distanceKm > 0 && totalAmount > 0 ? Math.round(totalAmount / distanceKm) : undefined;
 
-  // Dua mode input saling mengisi - TANPA clamp diam-diam saat ngetik.
-  // Validasi kapasitas tangki hanya saat Simpan (pesan jelas), biar nominal
-  // bebas seperti Rp43.590 / QRIS tetap bisa dimasukkan.
+  // Dua mode input saling mengisi — KEDUA kolom selalu bisa diketik.
+  // Ketik liter → total otomatis; ketik total (mis. 37.000) → liter otomatis.
+  // Tidak ada lagi kolom terkunci: dulu total readOnly di mode volume bikin
+  // ketikan Rp37.000 diabaikan lalu total nyangkut di hitungan full-tank.
   const handleFuelTypeChange = (name: string) => {
     setFuelType(name);
     const off = getOfficialPrice(name);
     if (off != null) {
       setPricePerLiter(off);
-      if (inputMode === 'volume') {
-        setTotalAmount(Math.round(liters * off));
-      } else if (off > 0) {
-        setLiters(Number((totalAmount / off).toFixed(3)));
-      }
+      setTotalAmount(Math.round(liters * off));
     }
   };
 
@@ -180,15 +176,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const handlePricePerLiterChange = (val: number) => {
     const price = Math.max(0, val);
     setPricePerLiter(price);
-    if (price > 0) {
-      if (inputMode === 'volume') {
-        setTotalAmount(Math.round(liters * price));
-      } else {
-        setLiters(Number((totalAmount / price).toFixed(3)));
-      }
-    } else if (inputMode === 'volume') {
-      setTotalAmount(0);
-    }
+    setTotalAmount(Math.round(liters * price));
   };
 
   const handleTotalAmountChange = (val: number) => {
@@ -323,7 +311,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
     void processReceiptFile(file);
   };
 
-  const handleSave = (bypassOdoCheck = false) => {
+  const handleSave = async (bypassOdoCheck = false) => {
+    if (isSavedSuccess) return;
     if (!stationName.trim()) {
       setFormError('Pilih SPBU dulu — ketuk kolom Lokasi SPBU.');
       return;
@@ -333,11 +322,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       return;
     }
     if (!(liters > 0)) {
-      setFormError(
-        inputMode === 'total'
-          ? 'Isi total bayar dulu (Rp) — liter dihitung otomatis dari harga resmi.'
-          : 'Isi volume BBM dulu (liter).'
-      );
+      setFormError('Isi volume BBM dulu (liter) — atau ketik total bayar, liter ngikut otomatis.');
       return;
     }
     if (!(totalAmount > 0)) {
@@ -351,16 +336,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       return;
     }
     setFormError(null);
-    // Samakan angka sesuai mode biar konsisten: volume->total dibulatkan, total->liter 3 desimal.
+    // Samakan angka biar konsisten: total dibulatkan, liter 3 desimal.
     // Contoh: Rp43.590 / Rp15.950 = 2,733 L tetap lolos walau bukan full tank.
-    const finalLiters =
-      inputMode === 'total' && pricePerLiter > 0
-        ? Number((totalAmount / pricePerLiter).toFixed(3))
-        : Number(liters);
-    const finalTotal =
-      inputMode === 'volume'
-        ? Math.round(Number(liters) * Number(pricePerLiter))
-        : Math.round(Number(totalAmount));
+    const finalLiters = Number(liters);
+    const finalTotal = Math.round(Number(totalAmount));
     if (!bypassOdoCheck && currentOdo < previousOdo) {
       setOdoWarnKind('lower');
       setShowOdoWarningModal(true);
@@ -396,10 +375,18 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
       notes,
     };
 
+    // Langsung simpan + pindah ke detail riwayat — tanpa jeda timer.
+    // (Dulu ada setTimeout 600ms yang bikin tombol nyangkut di "Berhasil"
+    // tanpa pindah halaman.)
     setIsSavedSuccess(true);
-    setTimeout(() => {
-      onSaveLog(newLog);
-    }, 600);
+    try {
+      await onSaveLog(newLog);
+    } catch {
+      // Tulis DB gagal (mis. aturan Firestore / offline) — jangan meneng wae,
+      // balekke tombol + tampilkan sebab biar user ngerti datane durung kesimpen.
+      setIsSavedSuccess(false);
+      setFormError('Gagal menyimpan ke database. Cek koneksi internet / login, lalu coba lagi.');
+    }
   };
 
   return (
@@ -836,35 +823,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           </div>
         </div>
 
-        {/* Volume, Harga & Total Pembayaran - 2 mode input */}
+        {/* Volume, Harga & Total Pembayaran — kedua kolom ketik, saling mengisi */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2.5">
-          {/* Toggle cara isi */}
-          <div className="bg-slate-200/80 p-1 rounded-full flex items-center">
-            <button
-              type="button"
-              onClick={() => setInputMode('volume')}
-              className={`flex-1 py-1.5 rounded-full text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
-                inputMode === 'volume' ? 'bg-white text-[#006194] shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">local_gas_station</span>
-              <span>Isi per Liter</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode('total')}
-              className={`flex-1 py-1.5 rounded-full text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
-                inputMode === 'total' ? 'bg-white text-[#006194] shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">payments</span>
-              <span>Isi per Total Rp</span>
-            </button>
-          </div>
           <p className="text-[10px] text-slate-500 bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
-            {inputMode === 'volume'
-              ? `Ketik liter — total otomatis (${formatRupiah(pricePerLiter)}/L).`
-              : `Ketik total bayar mis. 43.590 — liter otomatis (${formatRupiah(pricePerLiter)}/L). Cocok untuk bayar QRIS nominal bebas.`}
+            Kedua kolom bisa diketik langsung: ketik liter → total otomatis ({formatRupiah(pricePerLiter)}/L).
+            Ketik total mis. 43.590 → liter otomatis. Cocok untuk bayar QRIS nominal bebas.
           </p>
 
           <div className="grid grid-cols-2 gap-2.5">
@@ -872,13 +835,11 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
               className={`border p-2.5 rounded-lg ${
                 litersOverCapacity
                   ? 'bg-red-50 border-red-300'
-                  : inputMode === 'volume'
-                    ? 'bg-sky-50 border-sky-300'
-                    : 'bg-slate-50 border-slate-200'
+                  : 'bg-sky-50 border-sky-300'
               }`}
             >
               <span className="text-[10px] font-bold text-slate-500 flex items-center justify-between mb-1">
-                <span>Volume BBM {inputMode === 'volume' ? '• ketik' : '• otomatis'}</span>
+                <span>Volume BBM • ketik</span>
                 <span className="text-[#006194]">⛽ {tankCapacityL} L</span>
               </span>
               <div className="flex items-baseline justify-between">
@@ -887,15 +848,12 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                   inputMode="decimal"
                   value={liters === 0 ? '' : String(liters)}
                   placeholder="0"
-                  readOnly={inputMode !== 'volume'}
                   onChange={(e) => handleLitersChange(parseLiterInput(e.target.value))}
-                  className={`w-full bg-transparent text-base font-extrabold tabular-nums focus:outline-none ${
-                    inputMode !== 'volume' ? 'text-[#006194]' : 'text-slate-900'
-                  }`}
+                  className="w-full bg-transparent text-base font-extrabold tabular-nums focus:outline-none text-slate-900"
                 />
                 <span className="text-xs font-bold text-slate-400">Liter</span>
               </div>
-              {isFullTank && inputMode === 'volume' ? (
+              {isFullTank ? (
                 <button
                   type="button"
                   onClick={() => handleLitersChange(tankCapacityL)}
@@ -907,18 +865,14 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 <p className="mt-1 text-[10px] font-bold text-red-600">
                   Melebihi tangki {currentVehicle.name} ({tankCapacityL} L)
                 </p>
-              ) : inputMode !== 'volume' ? (
+              ) : (
                 <p className="mt-1 text-[10px] text-slate-400 tabular-nums">
                   = {formatRupiah(totalAmount)} ÷ {formatRupiah(pricePerLiter)}
                 </p>
-              ) : null}
+              )}
             </div>
 
-            <div
-              className={`border p-2.5 rounded-lg ${
-                inputMode === 'total' ? 'bg-sky-50 border-sky-300' : 'bg-slate-50 border-slate-200'
-              }`}
-            >
+            <div className="border p-2.5 rounded-lg bg-slate-50 border-slate-200">
               <span className="text-[10px] font-bold text-slate-500 block mb-1">
                 Harga per Liter {officialPrice != null ? `• resmi ${formatRupiah(officialPrice)}` : ''}
               </span>
@@ -948,14 +902,10 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
           </div>
 
           {/* Total Bayar Box */}
-          <div
-            className={`border p-3 rounded-lg ${
-              inputMode === 'total' ? 'bg-sky-50 border-sky-300' : 'bg-slate-100 border-slate-200/90'
-            }`}
-          >
+          <div className="border p-3 rounded-lg bg-sky-50 border-sky-300">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Total Pembayaran {inputMode === 'total' ? '• ketik bebas' : '• otomatis'}
+                Total Pembayaran • ketik bebas
               </span>
               <span className="text-[10px] font-bold text-slate-400 tabular-nums">
                 {liters} L × {formatRupiah(pricePerLiter)}/L
@@ -968,15 +918,12 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 inputMode="numeric"
                 value={formatRibuan(totalAmount)}
                 placeholder="cth 43.590"
-                readOnly={inputMode !== 'total'}
                 onChange={(e) => handleTotalAmountChange(parseRupiahInput(e.target.value))}
                 className="w-full bg-transparent text-lg font-extrabold text-[#006194] tabular-nums focus:outline-none"
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-              {inputMode === 'total'
-                ? `${formatRupiah(totalAmount)} ÷ ${formatRupiah(pricePerLiter)}/L = ${liters} L — bebas nominal QRIS, validasi tangki saat Simpan.`
-                : `${liters} L × ${formatRupiah(pricePerLiter)}/L = ${formatRupiah(totalAmount)} — pindah ke "Isi per Total Rp" untuk ketik nominal bebas.`}
+              {formatRupiah(totalAmount)} ÷ {formatRupiah(pricePerLiter)}/L = {liters} L — bebas nominal QRIS, validasi tangki saat Simpan.
             </p>
           </div>
 
