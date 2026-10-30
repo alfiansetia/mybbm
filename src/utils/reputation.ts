@@ -69,6 +69,11 @@ export const REPORT_COOLDOWN_MS = 3 * 60 * 1000;
 /** Jeda bila laporan dikirim padahal info sebelumnya ditolak komunitas. */
 export const PENALIZED_COOLDOWN_MS = 15 * 60 * 1000;
 
+/** Jendela relevansi laporan komunitas: luwih seko iki = basi, didelikne
+ *  saka konsensus + tampilan utama (iso dibuka lewat tombol riwayat).
+ *  Stok SPBU ganti cepet — 12 jam wis cukup basi. */
+export const REPORT_RELEVANT_MINUTES = 12 * 60;
+
 /** Net vote (up − 1.5×down) ≤ ini = info pelapor ditolak komunitas. */
 export const REJECTED_NET_MAX = -3;
 
@@ -111,6 +116,41 @@ export function formatCooldown(ms: number): string {
 /** Net peer-feedback satu laporan. */
 export function peerNetOf(upvotes: number, downvotes: number): number {
   return upvotes - downvotes * 1.5;
+}
+
+/**
+ * Umur laporan (menit). Utamake `timestamp` ISO (dinamis, ora basi) —
+ * fallback `minutesAgo` kanggo data warisan sing timestamp-e ora valid.
+ */
+export function reportAgeMinutes(
+  report: Pick<CommunityReport, 'timestamp' | 'minutesAgo'>,
+  now: number = Date.now()
+): number {
+  const t = Date.parse(report.timestamp ?? '');
+  if (!Number.isNaN(t)) {
+    return Math.max(0, Math.floor((now - t) / 60000));
+  }
+  return Math.max(0, report.minutesAgo ?? 0);
+}
+
+/** Laporan isih relevan (anyar) opo wis basi? */
+export function isReportFresh(
+  report: Pick<CommunityReport, 'timestamp' | 'minutesAgo'>,
+  now: number = Date.now(),
+  windowMinutes: number = REPORT_RELEVANT_MINUTES
+): boolean {
+  return reportAgeMinutes(report, now) <= windowMinutes;
+}
+
+/** "5" → "5 mnt lalu", "130" → "2 jam lalu", "3000" → "2 hari lalu". */
+export function formatReportAge(minutes: number): string {
+  const m = Math.max(0, Math.floor(minutes));
+  if (m < 1) return 'baru saja';
+  if (m < 60) return `${m} mnt lalu`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} jam lalu`;
+  const d = Math.floor(h / 24);
+  return `${d} hari lalu`;
 }
 
 export function getReputationTier(score: number): ReputationTier {

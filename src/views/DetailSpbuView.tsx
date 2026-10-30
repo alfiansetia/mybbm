@@ -6,7 +6,7 @@ import { StatusPill } from '../components/StatusPill';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { useUserLocation } from '../hooks/useUserLocation';
 import { formatRupiah } from '../utils/format';
-import { computeAggregatedStatus, reportCooldownLeftMs, reportKeyCooldownLeftMs, formatCooldown } from '../utils/reputation';
+import { computeAggregatedStatus, reportCooldownLeftMs, reportKeyCooldownLeftMs, formatCooldown, reportAgeMinutes, isReportFresh, formatReportAge } from '../utils/reputation';
 
 interface DetailSpbuViewProps {
   station: GasStation;
@@ -68,15 +68,26 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   // Normalisasi: dokumen lama Firestore iso ora duwe array iki → crash = layar blank.
   const fuels = station.fuels ?? [];
   const reports = station.reports ?? [];
+  const [showStaleHistory, setShowStaleHistory] = useState(false);
 
-  // Active top community report
-  const primaryReport = reports.length > 0 ? reports[0] : null;
+  // Laporan basi (>12 jam) ora melu konsensus + didelikne saka tampilan utama.
+  // Umur diitung saka timestamp (dinamis) — fallback minutesAgo kanggo data lawas.
+  const freshReports = useMemo(() => reports.filter((r) => isReportFresh(r)), [reports]);
+  const staleReports = useMemo(() => reports.filter((r) => !isReportFresh(r)), [reports]);
+  // Ganti SPBU = tutup maneh riwayat lawas-e.
+  useEffect(() => {
+    setShowStaleHistory(false);
+  }, [station.id]);
+
+  // Active top community report (sing relevan wae)
+  const primaryReport = freshReports.length > 0 ? freshReports[0] : null;
 
   // Konsensus komunitas (PRD BR-2): bobot recency × trust pelapor × vote.
   // Inilah tempat reputasi pelapor benar-benar ngaruh ke status tampil.
+  // MUNG laporan anyar (≤12 jam) sing diitung — sing basi ora relevan.
   const consensus = useMemo(
-    () => computeAggregatedStatus(reports),
-    [reports]
+    () => computeAggregatedStatus(freshReports),
+    [freshReports]
   );
 
   const showToast = (msg: string) => {
@@ -241,7 +252,9 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </span>
               <span className="text-slate-300">•</span>
               <span className="text-[11px] text-slate-500">
-                {reports.length === 0 ? 'Belum ada laporan' : `Update ${station.lastReportMinutesAgo} mnt lalu`}
+                {freshReports.length === 0
+                  ? (staleReports.length > 0 ? 'Belum ada update terbaru' : 'Belum ada laporan')
+                  : `Update ${formatReportAge(reportAgeMinutes(freshReports[0]))}`}
               </span>
             </div>
             <p className="text-xs font-semibold text-slate-800">
@@ -361,11 +374,11 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         </div>
       </div>
 
-      {/* 5. Live Community Note & Reputation Verification Card */}
-      {primaryReport && (
+      {/* 5. Live Community Note & Reputation Verification Card (mung sing anyar ≤12 jam) */}
+      {primaryReport ? (
         <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm mb-4">
           {/* Konsensus komunitas: status agregat berbobot */}
-          {reports.length > 0 && (
+          {freshReports.length > 0 && (
             <div className="flex items-center justify-between bg-slate-900 text-white rounded-lg px-3 py-2 mb-2.5">
               <span className="text-[11px] font-bold flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-teal-300">groups</span>
@@ -402,7 +415,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
                 </span>
               </div>
             </div>
-            <span className="text-[10px] text-slate-400">{primaryReport.minutesAgo} mnt lalu</span>
+            <span className="text-[10px] text-slate-400">{formatReportAge(reportAgeMinutes(primaryReport))}</span>
           </div>
 
           <div className="bg-slate-50 rounded-lg p-2.5 mb-2.5 border border-slate-100">
@@ -447,15 +460,15 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Other Community Reports if any */}
-      {reports.length > 1 && (
+      {freshReports.length > 1 && (
         <div className="flex flex-col gap-2 mb-4">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">
-            Laporan Komunitas Lainnya ({reports.length - 1})
+            Laporan Komunitas Lainnya ({freshReports.length - 1})
           </span>
-          {reports.slice(1).map((rep) => (
+          {freshReports.slice(1).map((rep) => (
             <div key={rep.id} className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -465,7 +478,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
                   )}
                   <ReputationBadge credibilityScore={rep.reporterTrustScore} size="xs" />
                 </div>
-                <span className="text-[10px] text-slate-400">{rep.minutesAgo} mnt lalu</span>
+                <span className="text-[10px] text-slate-400">{formatReportAge(reportAgeMinutes(rep))}</span>
               </div>
               {rep.notes && <p className="text-xs text-slate-700 italic">"{rep.notes}"</p>}
               <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100">
@@ -477,6 +490,74 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Empty state: ora ono laporan anyar — data basi didelikne */}
+      {!primaryReport && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+          <span className="material-symbols-outlined text-[20px] text-slate-400 shrink-0 mt-0.5">
+            history
+          </span>
+          <div>
+            <p className="text-xs font-bold text-slate-700">
+              {staleReports.length > 0 ? 'Belum ada info terbaru' : 'Belum ada laporan'}
+            </p>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              {staleReports.length > 0
+                ? `Laporan lawas (>12 jam) wis ora relevan kanggo stok saiki, dadi didelikne. Dadi pelapor anyar lewat tombol "Kasih Info BBM".`
+                : 'Dadi pelapor pertama lewat tombol "Kasih Info BBM" ing ngisor.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Riwayat basi: didelikne default, iso dibuka manual */}
+      {staleReports.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowStaleHistory((v) => !v)}
+            type="button"
+            className="w-full h-9 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-[0.99]"
+            aria-expanded={showStaleHistory}
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {showStaleHistory ? 'expand_less' : 'history'}
+            </span>
+            <span>
+              {showStaleHistory
+                ? 'Sembunyikan riwayat lama'
+                : `Tampilkan riwayat lama (${staleReports.length}) • >12 jam`}
+            </span>
+          </button>
+          {showStaleHistory && (
+            <div className="flex flex-col gap-2 mt-2 opacity-80">
+              {staleReports.map((rep) => (
+                <div key={rep.id} className="bg-slate-50 rounded-xl p-3 border border-dashed border-slate-300 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-slate-700">{rep.reporterName}</span>
+                      {rep.isVerifiedReporter && (
+                        <span className="material-symbols-outlined text-[14px] text-slate-400">verified</span>
+                      )}
+                      <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500 text-[9px] font-bold uppercase tracking-wide">
+                        Basi
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{formatReportAge(reportAgeMinutes(rep))}</span>
+                  </div>
+                  {rep.notes && <p className="text-xs text-slate-500 italic">"{rep.notes}"</p>}
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-200">
+                    <span>{rep.fuelType} • {rep.status} • Antrean {rep.queueStatus}</span>
+                    <span className="flex items-center gap-1 font-semibold">
+                      <span className="material-symbols-outlined text-[13px]">thumb_up</span>
+                      <span>{rep.upvotes}</span>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
