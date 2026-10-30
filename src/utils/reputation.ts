@@ -62,7 +62,8 @@ export const VERIFIED_SCORE_MIN = 4.5;
 /** Bonus per laporan terkirim (aktivitas murni, tanpa vote fiktif). */
 export const REPORT_ACTIVITY_STEP = 0.02;
 
-/** Jeda wajib antar laporan (anti-spam). */
+/** Jeda wajib lapor ULANG kombinasi SPBU+BBM sing podo (anti-spam).
+ *  Lapor BBM bedo (Pertalite → Pertamax) ora dikunci. */
 export const REPORT_COOLDOWN_MS = 3 * 60 * 1000;
 
 /** Jeda bila laporan dikirim padahal info sebelumnya ditolak komunitas. */
@@ -80,6 +81,25 @@ export function reportCooldownLeftMs(
   now: number = Date.now()
 ): number {
   return Math.max(0, (cooldownUntilMs ?? 0) - now);
+}
+
+/**
+ * Kunci cooldown per SPBU+BBM — lapor Pertalite ora ngunci Pertamax.
+ * Fuel dinormalke (lowercase) ben "Pertamax" vs "pertamax" dadi siji kunci.
+ */
+export function reportCooldownKey(stationId: string, fuelType: string): string {
+  return `${stationId}||${(fuelType ?? '').trim().toLowerCase()}`;
+}
+
+/** Sisa cooldown per-kunci (ms) dari profil. 0 = kombinasi iki boleh dilapor. */
+export function reportKeyCooldownLeftMs(
+  reportCooldowns: Record<string, number> | undefined,
+  stationId: string,
+  fuelType: string,
+  now: number = Date.now()
+): number {
+  const until = reportCooldowns?.[reportCooldownKey(stationId, fuelType)] ?? 0;
+  return Math.max(0, until - now);
 }
 
 /** "150000 ms" → "2:30" untuk label tombol. */

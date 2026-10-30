@@ -10,6 +10,8 @@ interface ServiceAlertBannerProps {
   logs: FuelLog[];
   onNavigateToStats: () => void;
   serviceStatus?: ServiceCalculationResult;
+  /** Dipanggil bar user konfirmasi servis — parent wajib hitung ulang status. */
+  onServiced?: () => void;
 }
 
 export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
@@ -17,6 +19,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
   logs,
   onNavigateToStats,
   serviceStatus,
+  onServiced,
 }) => {
   const [isDismissed, setIsDismissed] = useState(false);
   const [showChecklistModal, setShowChecklistModal] = useState(false);
@@ -57,31 +60,27 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
     writeServiceBaseline(vehicle.id, currentOdometer);
     setLastServiceOdo(currentOdometer);
     setShowConfirmModal(false);
+    // Kabari parent ben status dihitung ulang (baseline nang localStorage dudu state).
+    onServiced?.();
     setToastMessage('Jadwal servis berhasil diperbarui! Interval berikutnya telah direset.');
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // If dismissed by user, provide a compact restorable pill
+  const showFullBanner = isOverdue || isUrgent || isWarning;
+
+  // Dismiss = ilang tenan. Balekke nganggo tombol cilik alus nang ngisor.
   if (isDismissed) {
     return (
-      <div className="flex items-center justify-between px-3 py-2 bg-amber-50/80 border border-amber-200/60 rounded-xl text-xs text-amber-900 transition-all shadow-xs">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-[17px] text-[#894d00]">notifications_active</span>
-          <span>
-            Pengingat Servis:{' '}
-            <strong className="font-bold">
-              {isOverdue ? 'Jadwal Terlewati' : `Sisa ${formatKm(kmRemaining)}`}
-            </strong>
-          </span>
-        </div>
+      <>
+        {toastMessage && <Toast message={toastMessage} tone="success" position="top" />}
         <button
           type="button"
           onClick={() => setIsDismissed(false)}
-          className="text-[11px] font-bold text-[#006194] hover:underline px-2 py-0.5 rounded bg-white border border-slate-200 shadow-2xs"
+          className="w-full text-center text-[11px] text-slate-400 hover:text-[#006194] font-semibold py-1 active:scale-[0.99] transition"
         >
-          Buka
+          Tampilkan pengingat servis ({isOverdue ? 'terlewati' : `sisa ${formatKm(kmRemaining)}`})
         </button>
-      </div>
+      </>
     );
   }
 
@@ -90,7 +89,50 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
       {/* Toast Notification */}
       {toastMessage && <Toast message={toastMessage} tone="success" position="top" />}
 
-      {/* Main Service Alert Banner Card */}
+      {!showFullBanner ? (
+        /* Kondisi normal (sisa > 500 km): kartu ramping sebaris, ora menuhi layar. */
+        <div className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm text-xs">
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-[#059669] flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[18px]">oil_barrel</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-slate-800 truncate">
+              Kondisi Prima <span className="font-normal text-slate-500">• sisa {formatKm(kmRemaining)}</span>
+            </p>
+            <p className="text-[11px] text-slate-500 truncate">
+              Servis berikutnya {formatKm(nextServiceOdo)} • estimasi ~{estimatedDaysLeft} hari
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onNavigateToStats}
+            aria-label="Detail servis"
+            title="Detail servis"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-[#006194] hover:bg-sky-50 shrink-0 transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowConfirmModal(true)}
+            aria-label="Tandai sudah servis"
+            title="Tandai sudah servis"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-[#059669] hover:bg-emerald-50 shrink-0 transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDismissed(true)}
+            aria-label="Sembunyikan pengingat"
+            title="Sembunyikan"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-500 hover:bg-slate-100 shrink-0 transition-colors"
+          >
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+        </div>
+      ) : (
+      /* Main Service Alert Banner Card */
       <section
         className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-200 shadow-sm ${
           isOverdue
@@ -267,6 +309,7 @@ export const ServiceAlertBanner: React.FC<ServiceAlertBannerProps> = ({
           }`}
         />
       </section>
+      )}
 
       {/* Modal 1: Service Checklist Drawer */}
       {showChecklistModal && (

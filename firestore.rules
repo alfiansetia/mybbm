@@ -18,6 +18,19 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // Penalti global (info ditolak komunitas) sing isih mlaku ngunci kabeh laporan.
+    function penaltiGlobalWisLiwat() {
+      return !('cooldownUntilMs' in resource.data) ||
+        request.time.toMillis() > resource.data.cooldownUntilMs;
+    }
+
+    // Map cooldown kudu maju: ono kunci anyar + ora oleh mbusak kunci lawas.
+    function cooldownMapMaju() {
+      let oldMap = resource.data.get('reportCooldowns', {});
+      let newMap = request.resource.data.get('reportCooldowns', {});
+      return newMap != oldMap && newMap.keys().hasAll(oldMap.keys());
+    }
+
     // Connection testing doc
     match /test/{docId} {
       allow read: if true;
@@ -25,17 +38,26 @@ service cloud.firestore {
     }
 
     // User Profile
-    // Cooldown anti-spam laporan ditegakkan di server: totalReports hanya boleh
-    // naik bila cooldownUntilMs sudah lewat. Update profil lain (kendaraan aktif,
-    // dsb.) tetap bebas. Legacy doc tanpa cooldownUntilMs dianggap boleh sekali.
+    // Cooldown normal wis PER SPBU+BBM (map reportCooldowns: kunci
+    // `${stationId}||${bbm}` → epoch-ms) — lapor BBM bedo ora dikunci.
+    // Global cooldownUntilMs mung kanggo PENALTI (info ditolak komunitas):
+    // penalti sing isih mlaku ngunci kabeh laporan.
+    // Aturan server:
+    // - totalReports munggah +1 per tulis + wajib nggowo kunci cooldown anyar,
+    //   ora oleh mbusak kunci lawas (anti-ngakali penghapusan cooldown).
+    // - totalReports == 0 = reset data akun (idini).
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if isSignedIn() && resource.data.id == request.auth.uid;
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) && (
         request.resource.data.totalReports == resource.data.totalReports ||
-        (!('cooldownUntilMs' in resource.data) ||
-          request.time.toMillis() > resource.data.cooldownUntilMs)
+        request.resource.data.totalReports == 0 ||
+        (
+          request.resource.data.totalReports == resource.data.totalReports + 1 &&
+          penaltiGlobalWisLiwat() &&
+          cooldownMapMaju()
+        )
       );
       allow delete: if false;
     }

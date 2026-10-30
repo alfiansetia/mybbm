@@ -12,6 +12,12 @@ interface StationMapProps {
   accuracyM?: number | null;
   locating?: boolean;
   onLocate?: () => void;
+  /** Titik tengah awal peta. Default = posisi user (perilaku lama). */
+  center?: [number, number];
+  /** True = peta ngikut GPS user (daftar SPBU). False = anteng di tengah awal (detail SPBU). */
+  followUser?: boolean;
+  /** True = tombol Peta Luas / Tutup tersedia (fullscreen tanpa remount map). */
+  expandable?: boolean;
 }
 
 // In-map custom control buttons using the official useMap hook
@@ -107,6 +113,27 @@ const RecenterOnLocate: React.FC<{ userCoords: [number, number] }> = ({ userCoor
   return null;
 };
 
+// Pan ke pin yang dipilih setiap kali ganti (tanpa remount map).
+// Dipakai saat user ketuk pin lain di mode fullscreen detail.
+const FocusOnSelected: React.FC<{
+  stations: GasStation[];
+  selectedStationId?: string | null;
+}> = ({ stations, selectedStationId }) => {
+  const map = useMap();
+  const prev = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!map || !selectedStationId) return;
+    if (prev.current === selectedStationId) return;
+    prev.current = selectedStationId;
+    const st = stations.find((s) => s.id === selectedStationId);
+    if (!st) return;
+    map.panTo({ lat: st.lat, lng: st.lng });
+    if ((map.getZoom() ?? 0) < 15) map.setZoom(15);
+  }, [map, stations, selectedStationId]);
+  return null;
+};
+
 export const StationMap: React.FC<StationMapProps> = ({
   stations,
   selectedStationId,
@@ -115,26 +142,40 @@ export const StationMap: React.FC<StationMapProps> = ({
   accuracyM = null,
   locating = false,
   onLocate,
+  center,
+  followUser = true,
+  expandable = false,
 }) => {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
   // Map ID custom via env, fallback ke DEMO_MAP_ID bawaan Google untuk dev.
   const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
+  // Fullscreen = ganti wadah ke fixed overlay. Map-nya SATU instance stabil
+  // (tanpa ganti key) dadi tile + pin SPBU terdekat ora tau ilang.
+  const [expanded, setExpanded] = React.useState(false);
+  const mapCenter = center ?? userCoords;
 
   return (
-    <div className="relative w-full h-64 rounded-xl overflow-hidden shadow-sm border border-slate-200 bg-slate-100">
+    <div
+      className={
+        expanded
+          ? 'fixed inset-0 z-50 bg-slate-100'
+          : 'relative w-full h-64 rounded-xl overflow-hidden shadow-sm border border-slate-200 bg-slate-100'
+      }
+    >
       {apiKey ? (
         <MapErrorBoundary>
         <APIProvider apiKey={apiKey} libraries={['marker']}>
-          <div className="w-full h-full relative" key="gmap-stable">
+          <div className="w-full h-full relative">
             <Map
-              defaultCenter={{ lat: DEFAULT_COORDS[0], lng: DEFAULT_COORDS[1] }}
+              defaultCenter={{ lat: mapCenter[0], lng: mapCenter[1] }}
               defaultZoom={14}
               mapId={mapId}
               gestureHandling="greedy"
               disableDefaultUI={true}
               style={{ width: '100%', height: '100%' }}
             >
-              <RecenterOnLocate userCoords={userCoords} />
+              {followUser && <RecenterOnLocate userCoords={userCoords} />}
+              <FocusOnSelected stations={stations} selectedStationId={selectedStationId} />
               {/* User Location Pulse Marker */}
               <AdvancedMarker position={{ lat: userCoords[0], lng: userCoords[1] }} zIndex={50}>
                 <div className="relative flex items-center justify-center" title={accuracyM ? `Akurasi ±${accuracyM} m` : 'Lokasi saya'}>
@@ -145,16 +186,17 @@ export const StationMap: React.FC<StationMapProps> = ({
 
               {/* Station Markers with Status Visuals */}
               {stations.map((station) => {
-                const hasEmpty = station.fuels.some(
+                const fuels = station.fuels ?? [];
+                const hasEmpty = fuels.some(
                   (f) =>
                     f.status === 'Kosong' &&
                     (f.type.includes('Pertalite') || f.type.includes('Solar'))
                 );
                 const isLimited =
                   station.queueStatus === 'Sedang' ||
-                  station.fuels.some((f) => f.status === 'Terbatas');
+                  fuels.some((f) => f.status === 'Terbatas');
                 const isMadura = station.brand === 'Toko Madura';
-                const isUnknown = station.fuels.length === 0; // data peta, stok belum ada
+                const isUnknown = fuels.length === 0; // data peta, stok belum ada
 
                 let bgClass = 'bg-[#059669]'; // green available
                 let iconName = 'local_gas_station';
@@ -206,6 +248,20 @@ export const StationMap: React.FC<StationMapProps> = ({
               })}
 
               <MapControls userCoords={userCoords} locating={locating} onLocate={onLocate} />
+              {expandable && (
+                <button
+                  onClick={() => setExpanded((v) => !v)}
+                  title={expanded ? 'Tutup Peta Luas' : 'Buka Peta Luas'}
+                  aria-label={expanded ? 'Tutup Peta Luas' : 'Buka Peta Luas'}
+                  type="button"
+                  className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/95 backdrop-blur-md text-[#006194] text-[11px] font-bold shadow-md hover:bg-white active:scale-95 transition-transform"
+                >
+                  <span className="material-symbols-outlined text-[17px]">
+                    {expanded ? 'close_fullscreen' : 'fullscreen'}
+                  </span>
+                  <span>{expanded ? 'Tutup' : 'Peta Luas'}</span>
+                </button>
+              )}
             </Map>
           </div>
         </APIProvider>

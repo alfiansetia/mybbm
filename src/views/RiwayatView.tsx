@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Vehicle, FuelLog } from '../types';
 import { brandDotClass } from '../components/BrandAvatar';
 import { EmptyState } from '../components/EmptyState';
@@ -14,6 +14,9 @@ interface RiwayatViewProps {
   onCatat: () => void;
 }
 
+/** Infinite scroll: tambah batch tiap sentinel ngisor kesorot. */
+const PAGE_SIZE = 20;
+
 export const RiwayatView: React.FC<RiwayatViewProps> = ({
   vehicle,
   logs,
@@ -28,6 +31,34 @@ export const RiwayatView: React.FC<RiwayatViewProps> = ({
 
   const totalSpent = vehicleLogs.reduce((a, c) => a + c.totalAmount, 0);
   const totalLiters = vehicleLogs.reduce((a, c) => a + c.liters, 0);
+
+  // Infinite scroll — render bertahap ben ratusan log ora abot.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Ganti kendaraan → balik ke batch pertama.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [vehicle.id]);
+
+  const hasMore = visibleCount < vehicleLogs.length;
+  const visibleLogs = vehicleLogs.slice(0, visibleCount);
+
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((c) => Math.min(c + PAGE_SIZE, vehicleLogs.length));
+        }
+      },
+      { rootMargin: '320px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, vehicleLogs.length]);
 
   return (
     <div className="flex flex-col w-full gap-4 pb-28 animate-in fade-in duration-150">
@@ -73,7 +104,7 @@ export const RiwayatView: React.FC<RiwayatViewProps> = ({
         />
       ) : (
         <div className="flex flex-col gap-2.5">
-          {vehicleLogs.map((log) => (
+          {visibleLogs.map((log) => (
             <button
               key={log.id}
               onClick={() => onSelectLog(log.id)}
@@ -120,6 +151,22 @@ export const RiwayatView: React.FC<RiwayatViewProps> = ({
               </div>
             </button>
           ))}
+
+          {/* Sentinel infinite scroll */}
+          {hasMore ? (
+            <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-3 text-slate-400">
+              <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+              <span className="text-[11px] font-semibold">
+                Memuat… ({visibleLogs.length} dari {vehicleLogs.length})
+              </span>
+            </div>
+          ) : (
+            vehicleLogs.length > PAGE_SIZE && (
+              <p className="text-center text-[11px] text-slate-400 py-2">
+                Kabeh {vehicleLogs.length} catatan wis tampil.
+              </p>
+            )
+          )}
         </div>
       )}
 

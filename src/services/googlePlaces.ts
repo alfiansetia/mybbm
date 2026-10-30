@@ -1,4 +1,5 @@
 import { BrandType, GasStation } from '../types';
+import { detectBrandFromText } from '../utils/brand';
 
 const PLACES_URL = 'https://places.googleapis.com/v1/places:searchNearby';
 const SEARCH_TEXT_URL = 'https://places.googleapis.com/v1/places:searchText';
@@ -19,13 +20,7 @@ function sanitizeId(raw: string): string {
 }
 
 function detectBrand(name: string): BrandType {
-  const hay = name.toLowerCase();
-  if (hay.includes('pertamina')) return 'Pertamina';
-  if (hay.includes('shell')) return 'Shell';
-  if (hay.includes('vivo')) return 'Vivo';
-  if (/\bbp\b/.test(hay) || hay.includes('bp-akr') || hay.includes('bp akr')) return 'BP';
-  if (hay.includes('madura') || hay.includes('pertamini')) return 'Toko Madura';
-  return 'Lainnya';
+  return detectBrandFromText(name);
 }
 
 /**

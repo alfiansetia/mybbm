@@ -109,6 +109,9 @@ export interface UserProfile {
   totalReports: number;
   /** Epoch-ms sampai kapan user tidak boleh melapor lagi (anti-spam). */
   cooldownUntilMs?: number;
+  /** Cooldown per SPBU+BBM: kunci `${stationId}||${bbm}` → epoch-ms.
+   *  Lapor BBM bedo nang SPBU podo (utowo SPBU bedo) ora dikunci. */
+  reportCooldowns?: Record<string, number>;
 }
 
 /** Hasil submit laporan: diterima / ditolak cooldown / kena penalti penolakan komunitas. */

@@ -1,5 +1,6 @@
 import { BrandType, GasStation } from '../types';
 import { haversineKm } from '../utils/geo';
+import { detectBrandFromText, isPertaminaRef } from '../utils/brand';
 import { fetchGoogleNearbyFuel } from './googlePlaces';
 
 export type MapSource = 'google' | 'osm';
@@ -22,12 +23,24 @@ interface OsmElement {
 }
 
 function detectBrand(tags: Record<string, string>): BrandType {
-  const hay = `${tags.brand ?? ''} ${tags.name ?? ''} ${tags.operator ?? ''}`.toLowerCase();
-  if (hay.includes('pertamina')) return 'Pertamina';
-  if (hay.includes('shell')) return 'Shell';
-  if (hay.includes('vivo')) return 'Vivo';
-  if (/\bbp\b/.test(hay) || hay.includes('bp-akr') || hay.includes('bp akr')) return 'BP';
-  if (hay.includes('madura') || hay.includes('pertamini')) return 'Toko Madura';
+  // Rangkul varian tag OSM: network/owner/website/contact sering gowo jeneng brand
+  // padahal kolom brand/operator kosong (kasus umum SPBU swasta nang Indonesia).
+  const hay = [
+    tags.brand,
+    tags.name,
+    tags.operator,
+    tags['operator:short'],
+    tags.network,
+    tags.owner,
+    tags.website,
+    tags['contact:website'],
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const brand = detectBrandFromText(hay);
+  if (brand !== 'Lainnya') return brand;
+  // Nomer khas "34.xxxxx" = SPBU Pertamina walau tanpa jeneng brand.
+  if (isPertaminaRef(tags.ref)) return 'Pertamina';
   return 'Lainnya';
 }
 

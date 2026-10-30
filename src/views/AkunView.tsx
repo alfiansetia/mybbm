@@ -258,7 +258,7 @@ export const AkunView: React.FC<AkunViewProps> = ({
             info
           </span>
           <p className="text-[11px] leading-relaxed">
-            <strong>Cara Kerja Reputasi:</strong> Setiap laporan yang diverifikasi benar (👍) oleh motorist lain akan meningkatkan Skor Kredibilitasmu. Laporan dari pelapor bereputasi tinggi memiliki bobot lebih besar dalam menentukan status live SPBU! Jeda 3 menit antar laporan; info yang ditolak komunitas (👎≤−3) kena penalti −0,3 skor + jeda 15 menit.
+            <strong>Cara Kerja Reputasi:</strong> Setiap laporan yang diverifikasi benar (👍) oleh motorist lain akan meningkatkan Skor Kredibilitasmu. Laporan dari pelapor bereputasi tinggi memiliki bobot lebih besar dalam menentukan status live SPBU! Cooldown 3 menit mung kanggo SPBU + BBM sing podo (BBM bedo iso langsung); info yang ditolak komunitas (👎≤−3) kena penalti −0,3 skor + kabeh laporan dikunci 15 menit.
           </p>
         </div>
       </div>

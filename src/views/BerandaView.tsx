@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Vehicle, FuelLog, GasStation } from '../types';
 import { ServiceAlertBanner } from '../components/ServiceAlertBanner';
 import { ServiceTracker, readServiceBaseline } from '../utils/serviceTracker';
@@ -37,6 +37,10 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
   // Filter logs for active vehicle
   const vehicleLogs = logs.filter((l) => l.vehicleId === activeVehicle.id);
 
+  // Tick manual: baseline servis disimpen nang localStorage (dudu state),
+  // dadi perlu pemicu ulang hitung bar user konfirmasi "Sudah Servis".
+  const [serviceTick, setServiceTick] = useState(0);
+
   // Calculate remaining distance until next service using ServiceTracker utility
   const serviceStatus = useMemo(() => {
     return ServiceTracker.evaluateServiceStatus(
@@ -44,7 +48,8 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
       logs,
       readServiceBaseline(activeVehicle.id)
     );
-  }, [activeVehicle, logs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVehicle, logs, serviceTick]);
 
   // Calculate monthly stats (for current month October 2026 or latest 30 days)
   const totalSpent = vehicleLogs.reduce((acc, curr) => acc + curr.totalAmount, 0);
@@ -163,6 +168,7 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
         logs={logs}
         serviceStatus={serviceStatus}
         onNavigateToStats={() => onNavigateTab('statistik')}
+        onServiced={() => setServiceTick((t) => t + 1)}
       />
 
       {/* 3. Quick Action Bento Bar */}

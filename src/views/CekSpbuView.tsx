@@ -465,7 +465,8 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
       )}
 
       {/* 4. Interactive OpenStreetMap Canvas */}
-      <StationMap        stations={baseFiltered}
+      <StationMap
+        stations={baseFiltered}
         selectedStationId={activeStationId}
         onSelectStation={(id) => {
           setActiveStationId(id);
@@ -475,6 +476,7 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
         accuracyM={accuracyM}
         locating={locating}
         onLocate={requestLocation}
+        expandable
       />
 
       {/* 5. Station Cards Header */}
@@ -715,7 +717,9 @@ export const CekSpbuView: React.FC<CekSpbuViewProps> = ({
           </div>
         </div>
         <button
-          onClick={() => onOpenReportModal()}
+          onClick={() =>
+            onOpenReportModal(filteredStations[0]?.id ?? baseFiltered[0]?.id)
+          }
           className="shrink-0 px-3.5 py-2 rounded-lg bg-[#006194] hover:bg-[#007bb9] text-white text-xs font-bold shadow-sm active:scale-95 transition-transform"
           type="button"
         >

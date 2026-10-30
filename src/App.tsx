@@ -48,7 +48,7 @@ import { DetailSpbuView } from './views/DetailSpbuView';
 import { StatistikView } from './views/StatistikView';
 import { AkunView } from './views/AkunView';
 import { LandingView } from './views/LandingView';
-import { calculateReporterScore, NEW_USER_SCORE, VERIFIED_SCORE_MIN, REPORT_ACTIVITY_STEP, REPORT_COOLDOWN_MS, PENALIZED_COOLDOWN_MS, REJECTED_NET_MAX, REJECTED_PENALTY, peerNetOf } from './utils/reputation';
+import { calculateReporterScore, NEW_USER_SCORE, VERIFIED_SCORE_MIN, REPORT_ACTIVITY_STEP, REPORT_COOLDOWN_MS, PENALIZED_COOLDOWN_MS, REJECTED_NET_MAX, REJECTED_PENALTY, peerNetOf, reportCooldownKey, reportKeyCooldownLeftMs } from './utils/reputation';
 import { useUserLocation } from './hooks/useUserLocation';
 import { fetchMapStations, mergeStationsById } from './services/nearbyStations';
 
@@ -353,6 +353,24 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Counter pemicu buka sheet laporan otomatis nang halaman detail.
+  const [reportSignal, setReportSignal] = useState(0);
+
+  const handleOpenReport = (stationId?: string) => {
+    // Lapor tanpa SPBU spesifik (tombol "+ Lapor") = niat lapor langsung.
+    // Default: SPBU paling cedak (distanceKm terkecil), dudu indeks acak.
+    // Sheet laporan dibuka otomatis nang halaman detail (reportSignal).
+    const targetId =
+      stationId ??
+      [...displayStations].sort((a, b) => a.distanceKm - b.distanceKm)[0]?.id;
+    if (!targetId) {
+      handleNavigateTab('cek-spbu');
+      return;
+    }
+    setReportSignal((s) => s + 1);
+    handleSelectStation(targetId);
+  };
+
   // Add new fuel log and save to Firestore (hanya saat login + ada kendaraan aktif).
   // Langsung buka detail catatan yang baru disimpan — user bisa cek, ubah, atau hapus.
   const handleSaveLog = async (newLog: FuelLog) => {
@@ -417,12 +435,25 @@ export default function App() {
       return { accepted: false, penalized: false, retryInMs: 0 };
     }
 
-    // Guard 1: cooldown — tolak sebelum menulis apa pun.
+    // Guard 1: penalti GLOBAL — info saya ditolak komunitas → kabeh laporan dikunci.
     const now = Date.now();
-    const retryInMs = Math.max(0, (userProfile.cooldownUntilMs ?? 0) - now);
-    if (retryInMs > 0) {
-      console.info('[Reputasi] Laporan ditolak: cooldown berjalan.');
-      return { accepted: false, penalized: false, retryInMs };
+    const globalRetryMs = Math.max(0, (userProfile.cooldownUntilMs ?? 0) - now);
+    if (globalRetryMs > 0) {
+      console.info('[Reputasi] Laporan ditolak: penalti global berjalan.');
+      return { accepted: false, penalized: true, retryInMs: globalRetryMs };
+    }
+
+    // Guard 1b: cooldown PER SPBU+BBM — lapor Pertalite ora ngunci Pertamax.
+    // (Biyen global 3 menit: user bingung, lapor BBM bedo katut dikunci.)
+    const keyRetryMs = reportKeyCooldownLeftMs(
+      userProfile.reportCooldowns,
+      stationId,
+      newReportData.fuelType,
+      now
+    );
+    if (keyRetryMs > 0) {
+      console.info('[Reputasi] Laporan ditolak: cooldown SPBU+BBM iki mlaku.');
+      return { accepted: false, penalized: false, retryInMs: keyRetryMs };
     }
 
     // Guard 2: info saya sebelumnya di SPBU+BBM yang sama ditolak komunitas?
@@ -522,12 +553,29 @@ export default function App() {
         Math.max(1.0, userProfile.credibilityScore + REPORT_ACTIVITY_STEP - (penalized ? REJECTED_PENALTY : 0))
       ).toFixed(1)
     );
+    // Cooldown per-key: buang kunci sing wis kadaluarsa + batasi 100 kunci
+    // paling anyar ben dokumen profil ora melar.
+    const prunedCooldowns: Record<string, number> = {};
+    for (const [k, v] of Object.entries(userProfile.reportCooldowns ?? {})) {
+      if (v > now) prunedCooldowns[k] = v;
+    }
+    prunedCooldowns[reportCooldownKey(stationId, newReportData.fuelType)] =
+      now + REPORT_COOLDOWN_MS;
+    const prunedKeys = Object.keys(prunedCooldowns).sort(
+      (a, b) => prunedCooldowns[b] - prunedCooldowns[a]
+    );
+    const cappedCooldowns: Record<string, number> = {};
+    for (const k of prunedKeys.slice(0, 100)) cappedCooldowns[k] = prunedCooldowns[k];
+
     const updatedReputation = {
       reputationPoints: userProfile.reputationPoints + 15,
       totalReports: userProfile.totalReports + 1,
       credibilityScore: newScore,
       isVerified: newScore >= VERIFIED_SCORE_MIN,
-      cooldownUntilMs: now + (penalized ? PENALIZED_COOLDOWN_MS : REPORT_COOLDOWN_MS),
+      // Global mung kanggo penalti (info ditolak komunitas) — laporan normal
+      // ora ndemok cooldownUntilMs meneh.
+      ...(penalized ? { cooldownUntilMs: now + PENALIZED_COOLDOWN_MS } : {}),
+      reportCooldowns: cappedCooldowns,
     };
 
     setUserProfile((prev) => ({
@@ -833,10 +881,13 @@ export default function App() {
         {selectedStation ? (
           <DetailSpbuView
             station={selectedStation}
+            stations={displayStations}
             userProfile={userProfile}
             isGuest={isGuest}
             onRequireLogin={handleGoogleLogin}
             onBack={() => setSelectedStationDetailId(null)}
+            onSelectStation={handleSelectStation}
+            reportSignal={reportSignal}
             onSubmitReport={handleSubmitReport}
             onVoteReport={handleVoteReport}
           />
@@ -915,13 +966,7 @@ export default function App() {
               onSelectStation={handleSelectStation}
               onOpenRiwayat={handleOpenRiwayat}
               onSelectLog={handleSelectLog}
-              onOpenReportModal={(stationId) => {
-                if (stationId) {
-                  handleSelectStation(stationId);
-                } else {
-                  handleSelectStation(displayStations[1]?.id || displayStations[0]?.id);
-                }
-              }}
+              onOpenReportModal={handleOpenReport}
               onExportData={handleExportCSV}
               onChangeVehicle={() => handleNavigateTab('akun')}
             />
@@ -932,18 +977,11 @@ export default function App() {
             onSelectStation={handleSelectStation}
             onNearbyUpdate={(list) => setNearbyStations((prev) => mergeStationsById(prev, list))}
             canContribute={!!currentUser}
-            onOpenReportModal={(stationId) => {
-              if (stationId) {
-                handleSelectStation(stationId);
-              } else {
-                handleSelectStation(displayStations[1]?.id || displayStations[0]?.id);
-              }
-            }}
+            onOpenReportModal={handleOpenReport}
           />
         ) : activeTab === 'catat-bbm' ? (
           <CatatBbmView
             activeVehicle={activeVehicle!}
-            allVehicles={vehicles}
             stations={displayStations}
             lastLog={logs.find((l) => l.vehicleId === activeVehicle?.id) ?? null}
             initialMode={catatInitialMode}

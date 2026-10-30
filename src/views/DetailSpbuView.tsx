@@ -1,29 +1,37 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { GasStation, CommunityReport, UserProfile, SubmitReportResult } from '../types';
-import { MapErrorBoundary } from '../components/MapErrorBoundary';
+import { StationMap } from '../components/StationMap';
 import { ReputationBadge } from '../components/ReputationBadge';
 import { StatusPill } from '../components/StatusPill';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import { useUserLocation } from '../hooks/useUserLocation';
 import { formatRupiah } from '../utils/format';
-import { computeAggregatedStatus, reportCooldownLeftMs, formatCooldown } from '../utils/reputation';
+import { computeAggregatedStatus, reportCooldownLeftMs, reportKeyCooldownLeftMs, formatCooldown } from '../utils/reputation';
 
 interface DetailSpbuViewProps {
   station: GasStation;
+  /** Kabeh SPBU (komunitas + peta) — pin terdekat tetep tampil nang mini & fullscreen. */
+  stations: GasStation[];
   userProfile: UserProfile;
   isGuest?: boolean;
   onRequireLogin?: () => void;
   onBack: () => void;
+  onSelectStation: (stationId: string) => void;
+  /** Counter dari App: berubah = buka sheet laporan otomatis (tombol "+ Lapor"). */
+  reportSignal?: number;
   onSubmitReport: (stationId: string, newReport: Omit<CommunityReport, 'id' | 'timestamp'>) => Promise<SubmitReportResult>;
   onVoteReport: (stationId: string, reportId: string, voteType: 'up' | 'down') => void;
 }
 
 export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   station,
+  stations,
   userProfile,
   isGuest = false,
   onRequireLogin,
   onBack,
+  onSelectStation,
+  reportSignal = 0,
   onSubmitReport,
   onVoteReport,
 }) => {
@@ -33,25 +41,42 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
   const [selectedQueue, setSelectedQueue] = useState<'Sepi' | 'Sedang' | 'Panjang'>('Sepi');
   const [reportNote, setReportNote] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const { coords: userCoords, accuracyM, status: locStatus, requestLocation } = useUserLocation(true);
+
+  // Tombol "+ Lapor" (tanpa SPBU spesifik) = niat lapor langsung:
+  // sheet kebuka otomatis begitu detail tampil.
+  useEffect(() => {
+    if (reportSignal > 0) setIsSheetOpen(true);
+  }, [reportSignal]);
 
   // Cooldown anti-spam: detik berjalan selama sheet terbuka.
   const [nowTick, setNowTick] = useState(() => Date.now());
   useEffect(() => {
     if (!isSheetOpen) return;
+    setNowTick(Date.now());
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, [isSheetOpen]);
-  const cooldownLeftMs = isGuest ? 0 : reportCooldownLeftMs(userProfile.cooldownUntilMs, nowTick);
+  // Efektif = penalti global (yen ono) vs cooldown SPBU+BBM sing dipilih.
+  // Ganti BBM = countdown ganti: BBM bedo iso langsung dilapor.
+  const globalLeftMs = isGuest ? 0 : reportCooldownLeftMs(userProfile.cooldownUntilMs, nowTick);
+  const keyLeftMs = isGuest
+    ? 0
+    : reportKeyCooldownLeftMs(userProfile.reportCooldowns, station.id, selectedFuel, nowTick);
+  const cooldownLeftMs = Math.max(globalLeftMs, keyLeftMs);
+
+  // Normalisasi: dokumen lama Firestore iso ora duwe array iki → crash = layar blank.
+  const fuels = station.fuels ?? [];
+  const reports = station.reports ?? [];
 
   // Active top community report
-  const primaryReport = station.reports.length > 0 ? station.reports[0] : null;
+  const primaryReport = reports.length > 0 ? reports[0] : null;
 
   // Konsensus komunitas (PRD BR-2): bobot recency × trust pelapor × vote.
   // Inilah tempat reputasi pelapor benar-benar ngaruh ke status tampil.
   const consensus = useMemo(
-    () => computeAggregatedStatus(station.reports),
-    [station.reports]
+    () => computeAggregatedStatus(reports),
+    [reports]
   );
 
   const showToast = (msg: string) => {
@@ -142,61 +167,20 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         <span className="text-[11px] text-slate-500 font-medium">Detail SPBU & Stok</span>
       </div>
 
-      {/* 1. Interactive Mini Map / Location Context */}
-      <div
-        className={
-          isMapExpanded
-            ? 'fixed inset-0 z-50 bg-slate-100'
-            : 'relative w-full h-44 rounded-xl overflow-hidden shadow-sm bg-slate-100 mb-4 border border-slate-200'
-        }
-      >
-        {import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? (
-          <MapErrorBoundary fallbackLabel="Peta detail tidak dapat dimuat karena API key tidak valid. Info stok di bawah tetap bisa dipakai.">
-          <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY} libraries={['marker']}>
-            <div className="w-full h-full relative" key={isMapExpanded ? 'gmap-expanded' : 'gmap-mini'}>
-              <Map
-                defaultCenter={{ lat: station.lat, lng: station.lng }}
-                defaultZoom={isMapExpanded ? 16 : 15}
-                mapId={import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'}
-                gestureHandling="greedy"
-                disableDefaultUI={true}
-                style={{ width: '100%', height: '100%' }}
-              >
-                <AdvancedMarker position={{ lat: station.lat, lng: station.lng }}>
-                  <div className="w-8 h-8 rounded-full bg-[#006194] text-white flex items-center justify-center shadow-lg ring-2 ring-white">
-                    <span className="material-symbols-outlined text-[18px]">local_gas_station</span>
-                  </div>
-                </AdvancedMarker>
-              </Map>
-            </div>
-          </APIProvider>
-          </MapErrorBoundary>
-        ) : (
-          <div
-            className="w-full h-full bg-cover bg-center"
-            style={{
-              backgroundImage: `url('https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=800&q=80')`,
-            }}
-          />
-        )}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent flex items-end p-3 pointer-events-none z-10">
-          <div className="flex items-center justify-between w-full pointer-events-auto">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-sm text-slate-800 text-[11px] font-bold shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-[#059669] animate-pulse" />
-              Pantauan Google Maps Live
-            </span>
-            <button
-              onClick={() => setIsMapExpanded((v) => !v)}
-              className="px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-sm text-[#006194] text-[11px] font-bold flex items-center gap-1 shadow-xs hover:bg-white"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[15px]">
-                {isMapExpanded ? 'close_fullscreen' : 'fullscreen'}
-              </span>
-              {isMapExpanded ? 'Tutup' : 'Peta Luas'}
-            </button>
-          </div>
-        </div>
+      {/* 1. Peta interaktif — pin SPBU terdekat + lokasi user, mini & fullscreen */}
+      <div className="mb-4">
+        <StationMap
+          stations={stations}
+          selectedStationId={station.id}
+          onSelectStation={onSelectStation}
+          userCoords={userCoords}
+          accuracyM={accuracyM}
+          locating={locStatus === 'loading'}
+          onLocate={requestLocation}
+          center={[station.lat, station.lng]}
+          followUser={false}
+          expandable
+        />
       </div>
 
       {/* 2. Station Core Profile */}
@@ -232,7 +216,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
 
         {/* Facility Badges Scroll Track */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 no-scrollbar">
-          {station.facilities.map((fac) => (
+          {(station.facilities ?? []).map((fac) => (
             <span
               key={fac}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-medium shrink-0"
@@ -257,7 +241,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </span>
               <span className="text-slate-300">•</span>
               <span className="text-[11px] text-slate-500">
-                {station.reports.length === 0 ? 'Belum ada laporan' : `Update ${station.lastReportMinutesAgo} mnt lalu`}
+                {reports.length === 0 ? 'Belum ada laporan' : `Update ${station.lastReportMinutesAgo} mnt lalu`}
               </span>
             </div>
             <p className="text-xs font-semibold text-slate-800">
@@ -282,7 +266,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
         </div>
 
         <div className="flex flex-col gap-2.5">
-          {station.fuels.length === 0 && (
+          {fuels.length === 0 && (
             <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 text-center flex flex-col items-center gap-1.5">
               <span className="material-symbols-outlined text-[28px] text-[#006194]">help_outline</span>
               <p className="text-xs font-bold text-slate-800">Stok SPBU ini belum ada datanya</p>
@@ -291,7 +275,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </p>
             </div>
           )}
-          {station.fuels.map((fuel) => {
+          {fuels.map((fuel) => {
             const isKosong = fuel.status === 'Kosong';
             const isTerbatas = fuel.status === 'Terbatas';
 
@@ -381,7 +365,7 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       {primaryReport && (
         <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm mb-4">
           {/* Konsensus komunitas: status agregat berbobot */}
-          {station.reports.length > 0 && (
+          {reports.length > 0 && (
             <div className="flex items-center justify-between bg-slate-900 text-white rounded-lg px-3 py-2 mb-2.5">
               <span className="text-[11px] font-bold flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-teal-300">groups</span>
@@ -466,12 +450,12 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
       )}
 
       {/* Other Community Reports if any */}
-      {station.reports.length > 1 && (
+      {reports.length > 1 && (
         <div className="flex flex-col gap-2 mb-4">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">
-            Laporan Komunitas Lainnya ({station.reports.length - 1})
+            Laporan Komunitas Lainnya ({reports.length - 1})
           </span>
-          {station.reports.slice(1).map((rep) => (
+          {reports.slice(1).map((rep) => (
             <div key={rep.id} className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -667,12 +651,13 @@ export const DetailSpbuView: React.FC<DetailSpbuViewProps> = ({
               </div>
 
               {/* Reputation Reward Pill */}
-              <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#006194] text-[20px]">
+              <div className="bg-sky-50 border border-sky-200 rounded-lg p-2.5 flex items-start gap-2">
+                <span className="material-symbols-outlined text-[#006194] text-[20px] shrink-0">
                   military_tech
                 </span>
-                <p className="text-[11px] text-[#004b73]">
+                <p className="text-[11px] text-[#004b73] leading-relaxed">
                   Laporan Anda memberikan <strong>+15 Poin Reputasi</strong> Komunitas mybbm.
+                  Cooldown 3 menit mung kanggo SPBU + BBM sing podo — BBM liyo iso langsung kirim.
                 </p>
               </div>
 

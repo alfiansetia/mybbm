@@ -18,7 +18,6 @@ import {
 
 interface CatatBbmViewProps {
   activeVehicle: Vehicle;
-  allVehicles: Vehicle[];
   stations: GasStation[];
   /** Pembelian terakhir kendaraan ini — dipakai mengira-ngira jarak wajar. */
   lastLog?: FuelLog | null;
@@ -29,7 +28,6 @@ interface CatatBbmViewProps {
 
 export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   activeVehicle,
-  allVehicles,
   stations,
   lastLog = null,
   initialMode = 'scan',
@@ -43,7 +41,8 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
 
   // Form states
-  const [selectedVehicleId, setSelectedVehicleId] = useState(activeVehicle.id);
+  // Kendaraan manut navbar atas — dropdown nang form dibuang ben ora dobel sumber.
+  // Ganti kendaraan = lewat navbar atas / menu Akun.
   const [stationName, setStationName] = useState('');
   const [stationAddress, setStationAddress] = useState('');
   const [transactionNumber, setTransactionNumber] = useState('');
@@ -118,7 +117,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const currentVehicle = allVehicles.find((v) => v.id === selectedVehicleId) || activeVehicle;
+  const currentVehicle = activeVehicle;
   const tankCapacityL =
     currentVehicle.tankCapacityL && currentVehicle.tankCapacityL > 0
       ? currentVehicle.tankCapacityL
@@ -127,18 +126,41 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
         : 45;
   const litersOverCapacity = liters > tankCapacityL;
 
-  // Ganti kendaraan di form → volume ngikutin full tank kendaraan baru
-  // (hanya kalau toggle full-tank aktif, biar input manual tidak tertimpa).
-  const prevVehicleIdRef = useRef(selectedVehicleId);
+  // Ganti kendaraan lewat navbar atas → form ngikut kendaraan aktif anyar.
+  // Guard id: update odo kendaraan (bar simpan) ora nge-reset ketikan user.
+  const prevActiveVehicleIdRef = useRef(activeVehicle.id);
   useEffect(() => {
-    if (prevVehicleIdRef.current === selectedVehicleId) return;
-    prevVehicleIdRef.current = selectedVehicleId;
-    if (isFullTank) {
-      setLiters(Number(tankCapacityL.toFixed(3)));
-      setTotalAmount(Math.round(tankCapacityL * pricePerLiter));
-    }
+    if (prevActiveVehicleIdRef.current === activeVehicle.id) return;
+    prevActiveVehicleIdRef.current = activeVehicle.id;
+    const next = activeVehicle;
+    const fallbackGap = next.type === 'motor' ? 45 : 200;
+    setPreviousOdo(
+      lastLog && lastLog.odometer > 0 && lastLog.odometer <= next.currentOdo
+        ? lastLog.odometer
+        : next.currentOdo > fallbackGap
+          ? next.currentOdo - fallbackGap
+          : 0
+    );
+    setCurrentOdo(next.currentOdo || 0);
+    const cap =
+      next.tankCapacityL && next.tankCapacityL > 0
+        ? next.tankCapacityL
+        : next.type === 'motor'
+          ? 5
+          : 45;
+    const fuel = lastLog?.fuelType || 'Pertamax';
+    const price =
+      lastLog && lastLog.pricePerLiter > 0
+        ? lastLog.pricePerLiter
+        : (getOfficialPrice(fuel) ?? 10000);
+    setFuelType(fuel);
+    setLiters(Number(cap.toFixed(3)));
+    setPricePerLiter(price);
+    setTotalAmount(Math.round(cap * price));
+    setIsFullTank(true);
+    setFormError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVehicleId]);  const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
+  }, [activeVehicle.id, lastLog]);  const distanceKm = currentOdo > previousOdo ? currentOdo - previousOdo : 0;
   /**
    * Jarak wajar maks dihitung dari PEMBELIAN TERAKHIR, bukan kapasitas tangki:
    * bensin yang dipakai sejak isi sebelumnya ≈ sebanyak yang dibeli kemarin
@@ -355,7 +377,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
     const newLog: FuelLog = {
       id: `log-${Date.now()}`,
-      vehicleId: selectedVehicleId,
+      vehicleId: activeVehicle.id,
       dateTime: logDate.toISOString(),
       displayDate: formatDisplayDate(logDate),
       stationName,
@@ -602,7 +624,7 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
 
       {/* Main Extracted Form Data */}
       <div className="space-y-3.5">
-        {/* Vehicle Selector */}
+        {/* Vehicle Info — manut navbar atas, ora iso diganti nang kene */}
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-700">Kendaraan</label>
@@ -622,17 +644,9 @@ export const CatatBbmView: React.FC<CatatBbmViewProps> = ({
                 </p>
               </div>
             </div>
-            <select
-              value={selectedVehicleId}
-              onChange={(e) => setSelectedVehicleId(e.target.value)}
-              className="bg-transparent text-xs font-bold text-[#006194] focus:outline-none cursor-pointer"
-            >
-              {allVehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+            <span className="text-[10px] text-slate-400 font-semibold shrink-0 ml-2">
+              Ganti lewat navbar atas
+            </span>
           </div>
         </div>
 
